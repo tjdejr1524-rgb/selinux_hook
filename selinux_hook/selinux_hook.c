@@ -24,6 +24,10 @@
 #include <hook.h>
 #include <kpmodule.h>
 #include <kputils.h>
+/* --- statfs UUID 스푸핑을 위한 전역 변수 --- */
+static bool g_statfs_spoof_enabled = false; 
+static unsigned long g_fake_fsid = 0; 
+/* ------------------------------------------ */
 
 KPM_NAME("selinux_magisk_access_filter");
 #ifndef SELINUX_VERSION
@@ -4204,6 +4208,22 @@ static void before_android_log_buf_write(hook_fargs4_t *a, void *u) {
 }
 /* --- Vector 로그 필터링을 위한 추가 코드 끝 --- */
 /* --- devpts 필터링을 위한 추가 코드 끝 --- */
+/* --- statfs 시스템 콜 후킹 콜백 --- */
+static void after_statfs(hook_fargs3_t *a, void *u) {
+    // 1. 기능이 꺼져 있거나, 시스템 콜이 실패했으면 통과
+    if (!g_statfs_spoof_enabled) return;
+    if ((long)a->ret != 0) return;
+
+    // 2. statfs(path, buf) 에서 두 번째 인자(buf)가 struct statfs __user *
+    struct statfs __user *buf = (struct statfs __user *)a->arg1;
+    if (!buf) return;
+
+    // 3. f_fsid 값을 가짜 값으로 덮어씀
+    // (커널 버전에 따라 구조체 형태가 다를 수 있어 직접 메모리에 씁니다)
+    buf->f_fsid.__val[0] = (int)(g_fake_fsid & 0xFFFFFFFF);
+    buf->f_fsid.__val[1] = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
+}
+/* ------------------------------------- */
 static long init(const char *args, const char *event, void *__user r)
 {
     unsigned long addr;
@@ -4554,7 +4574,17 @@ static long init(const char *args, const char *event, void *__user r)
         pr_warn("[selinux_hook] cannot find __android_log_buf_write\n");
     }
     /* --- __android_log_buf_write 후킹 등록 끝 --- */
-
+    /* --- statfs 시스템 콜 후킹 등록 --- */
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_statfs");
+    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_statfs");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook statfs @ %lx for UUID spoofing\n", addr);
+        hook_wrap((void *)addr, 3, NULL, after_statfs, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find __arm64_sys_statfs\n");
+    }
+    /* ---------------------------------- */
     selinux_hook_dbg("[selinux_hook] %d hooks installed\n", g_hooks); // (이 줄은 원래 있던 줄입니다)
     selinux_hook_dbg("[selinux_hook] %d hooks installed\n", g_hooks);
     return 0;
@@ -4600,6 +4630,32 @@ static long control(const char* args, char* __user out_msg, int outlen) {
     char echo[64];
 
     zero_bytes(echo, sizeof(echo));
+    // =========================================================
+    // 👇👇👇 여기서부터 새로 추가하는 코드입니다 👇👇👇
+    // =========================================================
+    if (kpm_strncmp(args, "enable", 6) == 0) {
+        g_statfs_spoof_enabled = true;
+        if (g_fake_fsid == 0) {
+            g_fake_fsid = (unsigned long)jiffies ^ (unsigned long)current; 
+        }
+        pr_info("[selinux_hook] statfs spoof ENABLED, UUID: %lx\n", g_fake_fsid);
+        compat_copy_to_user(out_msg, "enabled\n", 8);
+        return 0;
+    } else if (kpm_strncmp(args, "disable", 7) == 0) {
+        g_statfs_spoof_enabled = false;
+        pr_info("[selinux_hook] statfs spoof DISABLED\n");
+        compat_copy_to_user(out_msg, "disabled\n", 9);
+        return 0;
+    } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
+        g_fake_fsid = (unsigned long)jiffies ^ (unsigned long)current ^ 0xABCDEF12;
+        g_statfs_spoof_enabled = true; 
+        pr_info("[selinux_hook] statfs fake UUID updated to %lx\n", g_fake_fsid);
+        compat_copy_to_user(out_msg, "uuid updated\n", 12);
+        return 0;
+    }
+    // =========================================================
+    // 👆👆👆 여기까지 추가 👆👆👆
+    // =========================================================
     if (rc < 0) {
     sprintf(echo, "error, rc=%d\n", rc);
         logke("fg_sram_write %s", echo);
