@@ -4239,6 +4239,18 @@ struct k_stat {
     struct { long tv_sec; long tv_nsec; } st_mtim;
     struct { long tv_sec; long tv_nsec; } st_ctim;
 };
+
+/* 커널 환경용 memmem 대체 함수 (바이너리 데이터 검색) */
+static void *memmem_local(const void *haystack, size_t haystacklen,
+                          const void *needle, size_t needlelen) {
+    if (!haystack || !needle || haystacklen < needlelen || needlelen == 0) return NULL;
+    for (size_t i = 0; i <= haystacklen - needlelen; ++i) {
+        if (memcmp((const char *)haystack + i, needle, needlelen) == 0)
+            return (void *)((const char *)haystack + i);
+    }
+    return NULL;
+}
+
 /* 커널 환경용 strstr 대체 함수 */
 static char *kpm_strstr(const char *haystack, const char *needle) {
     if (!*needle) return (char *)haystack;
@@ -4255,6 +4267,50 @@ static char *kpm_strstr(const char *haystack, const char *needle) {
     }
     return NULL;
 }
+/* --- show_map_vma 필터링을 위한 추가 코드 시작 --- */
+static bool is_hidden_module(struct seq_file *m) {
+    if (!m || !m->buf || m->count == 0) return false;
+    
+    static const char *keywords[] = {
+        "bytehook", "trampoline", "libart.so", "frida", "gum-js-loop", "xposed", NULL
+    };
+    
+    for (int i = 0; keywords[i] != NULL; ++i) {
+        // 👇 strlen 대신 str_len_safe 사용!
+        size_t kw_len = str_len_safe(keywords[i]);
+        if (memmem_local(m->buf, m->count, keywords[i], kw_len))
+            return true;
+    }
+    return false;
+}
+
+/* show_map_vma 실행 전: 현재 버퍼 길이 저장 */
+static void before_show_map_vma(hook_fargs2_t *a, void *u) {
+    // UID 10000 이상인 앱(틱톡, 덕디텍터 등)에만 적용
+    if (current_uid() < 10000) return;
+    
+    struct seq_file *m = (struct seq_file *)a->arg0;
+    a->local.data0 = 0;
+    if (m && m->buf) {
+        a->local.data0 = m->count; // 현재까지 쓰인 길이 저장
+    }
+}
+
+/* show_map_vma 실행 후: 의심스러운 라인이 있으면 버퍼 길이 복원(취소) */
+static void after_show_map_vma(hook_fargs2_t *a, void *u) {
+    if (current_uid() < 10000) return;
+    
+    struct seq_file *m = (struct seq_file *)a->arg0;
+    if (m && m->buf && a->local.data0) {
+        if (is_hidden_module(m)) {
+            // 의심스러운 키워드가 발견되면, 저장해둔 길이로 되돌려 해당 라인 출력 취소
+            pr_info("[selinux_hook] HIDE maps -> suspicious module\n");
+            m->count = a->local.data0; 
+        }
+    }
+}
+/* --- show_map_vma 필터링을 위한 추가 코드 끝 --- */
+
 /* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡 전용) --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
@@ -4765,6 +4821,17 @@ g_fake_fsid = (unsigned long)get_random_u64();
             return 0;
         }
     }
+      // 👇👇👇 여기에 추가하세요! 👇👇👇
+    /* --- show_map_vma 후킹 등록 (maps 필터링) --- */
+    addr = (unsigned long)lookup_name_optional_suffix("show_map_vma");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook show_map_vma @ %lx for maps filtering\n", addr);
+        hook_wrap((void *)addr, 2, before_show_map_vma, after_show_map_vma, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find show_map_vma\n");
+    }
+    // 👆👆👆 여기까지 👆👆👆
     return 0;
 }
 KPM_INIT(init);
