@@ -61,7 +61,7 @@ KPM_DESCRIPTION("Audit and reject Magisk /sys/fs/selinux/access probes");
 #define APATCH_MANAGER_UID ((uid_t)-1)
 #endif
 
-#define selinux_hook_dbg(fmt, ...) pr_info(fmt, ##__VA_ARGS__)
+#define selinux_hook_dbg(fmt, ...) do {} while (0)
 
 static void *g_funcs[16];
 static int g_hooks;
