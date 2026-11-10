@@ -4239,13 +4239,29 @@ struct k_stat {
     struct { long tv_sec; long tv_nsec; } st_mtim;
     struct { long tv_sec; long tv_nsec; } st_ctim;
 };
+/* --- seq_file 구조체 최소 정의 추가 --- */
+struct seq_file {
+    char *buf;
+    size_t size;
+    size_t from;
+    size_t count;
+};
 
+/* --- 커널용 memcmp 대체 함수 --- */
+static int kpm_memcmp(const void *s1, const void *s2, size_t n) {
+    const unsigned char *p1 = s1, *p2 = s2;
+    while (n--) {
+        if (*p1 != *p2) return *p1 - *p2;
+        p1++; p2++;
+    }
+    return 0;
+}
 /* 커널 환경용 memmem 대체 함수 (바이너리 데이터 검색) */
 static void *memmem_local(const void *haystack, size_t haystacklen,
                           const void *needle, size_t needlelen) {
     if (!haystack || !needle || haystacklen < needlelen || needlelen == 0) return NULL;
     for (size_t i = 0; i <= haystacklen - needlelen; ++i) {
-        if (memcmp((const char *)haystack + i, needle, needlelen) == 0)
+if (kpm_memcmp((const char *)haystack + i, needle, needlelen) == 0)
             return (void *)((const char *)haystack + i);
     }
     return NULL;
@@ -4733,7 +4749,17 @@ static long init(const char *args, const char *event, void *__user r)
         pr_warn("[selinux_hook] cannot find __arm64_sys_newfstatat\n");
     }
     /* -------------------------------------------------- */
-
+    
+    /* --- show_map_vma 후킹 등록 (maps 필터링) --- */
+    addr = (unsigned long)lookup_name_optional_suffix("show_map_vma");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook show_map_vma @ %lx for maps filtering\n", addr);
+        hook_wrap((void *)addr, 2, before_show_map_vma, after_show_map_vma, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find show_map_vma\n");
+    }
+    
     return 0;
 }
 static long exit_(void *__user r)
@@ -4804,8 +4830,6 @@ g_fake_fsid = (unsigned long)get_random_u64();
         return 0;
     }
     // =========================================================
-    // 👆👆👆 여기까지 추가 👆👆👆
-    // =========================================================
     if (rc < 0) {
     sprintf(echo, "error, rc=%d\n", rc);
         logke("fg_sram_write %s", echo);
@@ -4821,17 +4845,7 @@ g_fake_fsid = (unsigned long)get_random_u64();
             return 0;
         }
     }
-      // 👇👇👇 여기에 추가하세요! 👇👇👇
-    /* --- show_map_vma 후킹 등록 (maps 필터링) --- */
-    addr = (unsigned long)lookup_name_optional_suffix("show_map_vma");
-    if (addr) {
-        g_funcs[g_hooks++] = (void *)addr;
-        pr_info("[selinux_hook] hook show_map_vma @ %lx for maps filtering\n", addr);
-        hook_wrap((void *)addr, 2, before_show_map_vma, after_show_map_vma, NULL);
-    } else {
-        pr_warn("[selinux_hook] cannot find show_map_vma\n");
-    }
-    // 👆👆👆 여기까지 👆👆👆
+
     return 0;
 }
 KPM_INIT(init);
