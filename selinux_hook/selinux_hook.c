@@ -4239,10 +4239,31 @@ struct k_stat {
     struct { long tv_sec; long tv_nsec; } st_mtim;
     struct { long tv_sec; long tv_nsec; } st_ctim;
 };
-
+/* 커널 환경용 strstr 대체 함수 */
+static char *kpm_strstr(const char *haystack, const char *needle) {
+    if (!*needle) return (char *)haystack;
+    for (; *haystack; ++haystack) {
+        if (*haystack == *needle) {
+            const char *h = haystack;
+            const char *n = needle;
+            while (*h && *n && *h == *n) {
+                h++;
+                n++;
+            }
+            if (!*n) return (char *)haystack;
+        }
+    }
+    return NULL;
+}
 /* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡 전용) --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
+    
+    // 🟢 strstr -> kpm_strstr 로 변경
+    const char *comm = current_comm();
+    if (!comm || kpm_strstr(comm, "ss.android") == NULL) return;
+
+    if ((long)a->ret != 0) return;
     
     // 🟢 오직 틱톡/틱톡 라이트 프로세스일 때만 작동
     const char *comm = current_comm();
@@ -4266,22 +4287,23 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return; 
 
-    // 1. 프로세스 이름 확인
+    // 🟢 1. 프로세스 이름 확인 (strstr -> kpm_strstr)
     const char *comm = current_comm();
-    if (!comm || strstr(comm, "ss.android") == NULL) return;
+    if (!comm || kpm_strstr(comm, "ss.android") == NULL) return;
 
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
 
-    // 2. 경로 확인
+    // 🟢 2. 경로 확인
     const char __user *filename = (const char __user *)regs->regs[1];
     char path[256];
     if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     
-    bool is_target_path = (strstr(path, "ugc.trill") != NULL) || 
-                          (strstr(path, "ugc.tiktok.lite") != NULL);
+    // 🟢 strstr -> kpm_strstr 로 변경 (여기도 2군데 있습니다!)
+    bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
+                          (kpm_strstr(path, "ugc.tiktok.lite") != NULL);
     if (!is_target_path) return;
 
     // 3. 조건을 통과한 경우에만 Inode 위조
