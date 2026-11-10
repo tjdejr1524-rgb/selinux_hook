@@ -8,6 +8,7 @@
  * where the Magisk type/context does not exist.
  */
 
+#include <linux/uidgid.h>
 #include <asm/ptrace.h>
 #include <linux/kernel.h>
 #include <linux/printk.h>
@@ -4139,18 +4140,19 @@ static bool is_devpts_path(const char *path) {
     while (*p >= '0' && *p <= '9') p++;
     return *p == '\0';
 }
-
-static bool is_duckdetector_process(void) {
-    const char *comm = current_comm();
-    if (strstr(comm, "detector")) return true;
-    if (strstr(comm, "duckdetector")) return true;
+// 🟢 삭제한 자리에 이 코드를 붙여넣으세요.
+static bool is_target_process(void) {
+    // UID가 10000 이상인 모든 일반 사용자 앱에 적용
+    if (current_uid() >= 10000) {
+        return true;
+    }
     return false;
 }
 
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
-    if (!is_duckdetector_process()) return;
+if (!is_target_process()) return;
     const char __user *filename = (const char __user *)regs->regs[1];
     char buf[256];
     if (compat_strncpy_from_user(buf, filename, sizeof(buf)) > 0) {
@@ -4164,7 +4166,7 @@ static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
 static void before_statx_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
-    if (!is_duckdetector_process()) return;
+    if (!is_target_process()) return;  // 👈 이렇게 변경
     const char __user *filename = (const char __user *)regs->regs[1];
     char buf[256];
     if (compat_strncpy_from_user(buf, filename, sizeof(buf)) > 0) {
