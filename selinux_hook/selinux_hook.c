@@ -4260,7 +4260,11 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
 }
 /* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조) --- */
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
-    if (!g_statfs_spoof_enabled) return; // statfs와 동일한 스위치 사용
+    if (!g_statfs_spoof_enabled) return; 
+    
+    // 🟢 추가: 시스템 프로세스는 건드리지 않고, 일반 앱(UID 10000 이상)에만 적용
+    if (current_uid() < 10000) return; 
+    
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
