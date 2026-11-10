@@ -4208,22 +4208,34 @@ static void before_android_log_buf_write(hook_fargs4_t *a, void *u) {
 }
 /* --- Vector 로그 필터링을 위한 추가 코드 끝 --- */
 /* --- devpts 필터링을 위한 추가 코드 끝 --- */
+
+/* statfs 구조체 내부의 f_fsid 접근을 위한 최소 정의 추가 */
+struct k_statfs {
+    long f_type;
+    long f_bsize;
+    long f_blocks;
+    long f_bfree;
+    long f_bavail;
+    long f_files;
+    long f_ffree;
+    struct { int __val[2]; } f_fsid;
+};
+
 /* --- statfs 시스템 콜 후킹 콜백 --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     // 1. 기능이 꺼져 있거나, 시스템 콜이 실패했으면 통과
     if (!g_statfs_spoof_enabled) return;
     if ((long)a->ret != 0) return;
 
-    // 2. statfs(path, buf) 에서 두 번째 인자(buf)가 struct statfs __user *
-    struct statfs __user *buf = (struct statfs __user *)a->arg1;
+    // 2. statfs(path, buf) 에서 두 번째 인자(buf) 가져오기
+    // 👇 struct statfs 대신 위에서 만든 struct k_statfs 로 변경!
+    struct k_statfs __user *buf = (struct k_statfs __user *)a->arg1;
     if (!buf) return;
 
     // 3. f_fsid 값을 가짜 값으로 덮어씀
-    // (커널 버전에 따라 구조체 형태가 다를 수 있어 직접 메모리에 씁니다)
     buf->f_fsid.__val[0] = (int)(g_fake_fsid & 0xFFFFFFFF);
     buf->f_fsid.__val[1] = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
 }
-/* ------------------------------------- */
 static long init(const char *args, const char *event, void *__user r)
 {
     unsigned long addr;
@@ -4636,7 +4648,7 @@ static long control(const char* args, char* __user out_msg, int outlen) {
     if (kpm_strncmp(args, "enable", 6) == 0) {
         g_statfs_spoof_enabled = true;
         if (g_fake_fsid == 0) {
-            g_fake_fsid = (unsigned long)jiffies ^ (unsigned long)current; 
+g_fake_fsid = (unsigned long)get_random_u64(); 
         }
         pr_info("[selinux_hook] statfs spoof ENABLED, UUID: %lx\n", g_fake_fsid);
         compat_copy_to_user(out_msg, "enabled\n", 8);
@@ -4647,7 +4659,7 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         compat_copy_to_user(out_msg, "disabled\n", 9);
         return 0;
     } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
-        g_fake_fsid = (unsigned long)jiffies ^ (unsigned long)current ^ 0xABCDEF12;
+g_fake_fsid = (unsigned long)get_random_u64();
         g_statfs_spoof_enabled = true; 
         pr_info("[selinux_hook] statfs fake UUID updated to %lx\n", g_fake_fsid);
         compat_copy_to_user(out_msg, "uuid updated\n", 12);
