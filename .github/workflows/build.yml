@@ -1,0 +1,35 @@
+name: Build KPM
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
+          unzip -q android-ndk-r26d-linux.zip
+          echo "NDK_PATH=$PWD/android-ndk-r26d" >> $GITHUB_ENV
+
+      - name: Setup KernelPatch
+        run: |
+          git clone https://github.com/bmax121/KernelPatch.git
+          echo "KP_DIR=$PWD/KernelPatch" >> $GITHUB_ENV
+
+      - name: Build KPM
+        run: |
+          cd selinux_hook
+          make NDK_PATH=$NDK_PATH KP_DIR=$KP_DIR
+
+      - name: Upload KPM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: selinux_hook_kpm
+          path: selinux_hook/*.kpm
