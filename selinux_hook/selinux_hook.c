@@ -4719,7 +4719,7 @@ static long init(const char *args, const char *event, void *__user r)
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook statx @ %lx for devpts\n", addr);
-         hook_wrap((void *)addr, 1, before_newfstatat_devpts, NULL, NULL);
+         hook_wrap((void *)addr, 1, before_statx_devpts, NULL, NULL);
     }
     /* --- devpts 시스템 콜 후킹 등록 끝 --- */
       /* --- __android_log_buf_write 후킹 등록 --- */
