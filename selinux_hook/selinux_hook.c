@@ -27,6 +27,8 @@
 /* --- statfs UUID 스푸핑을 위한 전역 변수 --- */
 static bool g_statfs_spoof_enabled = false; 
 static unsigned long g_fake_fsid = 0; 
+static unsigned long g_fake_ino = 0; 
+
 /* ------------------------------------------ */
 
 KPM_NAME("selinux_magisk_access_filter");
@@ -4238,9 +4240,14 @@ struct k_stat {
     struct { long tv_sec; long tv_nsec; } st_ctim;
 };
 
-/* --- statfs 시스템 콜 후킹 콜백 --- */
+/* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡 전용) --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
+    
+    // 🟢 오직 틱톡/틱톡 라이트 프로세스일 때만 작동
+    const char *comm = current_comm();
+    if (!comm || strstr(comm, "ss.android") == NULL) return;
+
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
@@ -4249,33 +4256,40 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[2];
     if (!buf) return;
 
-    // 🟢 put_user 대신 compat_copy_to_user를 사용하여 안전하게 값을 복사합니다.
     int val0 = (int)(g_fake_fsid & 0xFFFFFFFF);
     int val1 = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
 
-    // 첫 번째 32비트 쓰기
     if (compat_copy_to_user(&buf->f_fsid.__val[0], &val0, sizeof(int)) != 0) return;
-    // 두 번째 32비트 쓰기
     if (compat_copy_to_user(&buf->f_fsid.__val[1], &val1, sizeof(int)) != 0) return;
 }
-/* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조) --- */
+/* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조 - 틱톡 전용) --- */
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return; 
-    
-    // 🟢 추가: 시스템 프로세스는 건드리지 않고, 일반 앱(UID 10000 이상)에만 적용
-    if (current_uid() < 10000) return; 
-    
+
+    // 1. 프로세스 이름 확인
+    const char *comm = current_comm();
+    if (!comm || strstr(comm, "ss.android") == NULL) return;
+
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
 
-    // newfstatat의 결과 버퍼(statbuf)는 regs[2] 입니다.
+    // 2. 경로 확인
+    const char __user *filename = (const char __user *)regs->regs[1];
+    char path[256];
+    if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
+    
+    bool is_target_path = (strstr(path, "ugc.trill") != NULL) || 
+                          (strstr(path, "ugc.tiktok.lite") != NULL);
+    if (!is_target_path) return;
+
+    // 3. 조건을 통과한 경우에만 Inode 위조
     struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
     if (!buf) return;
 
-    // Inode 번호만 가짜 값(0x12345678)으로 위조
-    unsigned long fake_ino = 0x12345678; 
+    // 🟢 고정값 대신, set_uuid 명령으로 생성된 랜덤 변수를 사용!
+    unsigned long fake_ino = g_fake_ino; 
     if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
 }
 static long init(const char *args, const char *event, void *__user r)
@@ -4712,6 +4726,10 @@ g_fake_fsid = (unsigned long)get_random_u64();
         return 0;
     } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
 g_fake_fsid = (unsigned long)get_random_u64();
+      
+          // 🟢 Inode 랜덤 생성 (이 줄을 추가하세요!)
+    g_fake_ino = (unsigned long)get_random_u64();
+      
         g_statfs_spoof_enabled = true; 
         pr_info("[selinux_hook] statfs fake UUID updated to %lx\n", g_fake_fsid);
         compat_copy_to_user(out_msg, "uuid updated\n", 12);
