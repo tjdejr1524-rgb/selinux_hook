@@ -4221,6 +4221,23 @@ struct k_statfs {
     struct { int __val[2]; } f_fsid;
 };
 
+/* stat 구조체 최소 정의 (Inode 접근용) */
+struct k_stat {
+    unsigned long st_dev;
+    unsigned long st_ino;      // 👈 Inode 번호
+    unsigned int st_mode;
+    unsigned int st_nlink;
+    unsigned int st_uid;
+    unsigned int st_gid;
+    unsigned long st_rdev;
+    long st_size;
+    long st_blksize;
+    long st_blocks;
+    struct { long tv_sec; long tv_nsec; } st_atim;
+    struct { long tv_sec; long tv_nsec; } st_mtim;
+    struct { long tv_sec; long tv_nsec; } st_ctim;
+};
+
 /* --- statfs 시스템 콜 후킹 콜백 --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
@@ -4240,6 +4257,22 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     if (compat_copy_to_user(&buf->f_fsid.__val[0], &val0, sizeof(int)) != 0) return;
     // 두 번째 32비트 쓰기
     if (compat_copy_to_user(&buf->f_fsid.__val[1], &val1, sizeof(int)) != 0) return;
+}
+/* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조) --- */
+static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
+    if (!g_statfs_spoof_enabled) return; // statfs와 동일한 스위치 사용
+    if ((long)a->ret != 0) return;
+
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
+    if (!regs) return;
+
+    // newfstatat의 결과 버퍼(statbuf)는 regs[2] 입니다.
+    struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
+    if (!buf) return;
+
+    // Inode 번호만 가짜 값(0x12345678)으로 위조
+    unsigned long fake_ino = 0x12345678; 
+    if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
 }
 static long init(const char *args, const char *event, void *__user r)
 {
@@ -4590,24 +4623,33 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find __android_log_buf_write\n");
     }
-    /* --- __android_log_buf_write 후킹 등록 끝 --- */
+      /* --- __android_log_buf_write 후킹 등록 끝 --- */
+    
     /* --- statfs 시스템 콜 후킹 등록 --- */
     addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_statfs");
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_statfs");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook statfs @ %lx for UUID spoofing\n", addr);
-        // 🔴 3을 🟢 1로 변경하세요!
         hook_wrap((void *)addr, 1, NULL, after_statfs, NULL); 
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_statfs\n");
     }
     /* ---------------------------------- */
-    selinux_hook_dbg("[selinux_hook] %d hooks installed\n", g_hooks); // (이 줄은 원래 있던 줄입니다)
-    selinux_hook_dbg("[selinux_hook] %d hooks installed\n", g_hooks);
+
+    /* --- newfstatat 시스템 콜 후킹 등록 (Inode 위조) --- */
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstatat");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook newfstatat @ %lx for inode spoofing\n", addr);
+        hook_wrap((void *)addr, 4, NULL, after_newfstatat_inode, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find __arm64_sys_newfstatat\n");
+    }
+    /* -------------------------------------------------- */
+
     return 0;
 }
-
 static long exit_(void *__user r)
 {
     WRITE_ONCE(g_write_op_install_deferred, false);
