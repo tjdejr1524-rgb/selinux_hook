@@ -4642,7 +4642,7 @@ static long init(const char *args, const char *event, void *__user r)
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook newfstatat @ %lx for inode spoofing\n", addr);
-        hook_wrap((void *)addr, 4, NULL, after_newfstatat_inode, NULL);
+        hook_wrap((void *)addr, 1, NULL, after_newfstatat_inode, NULL);
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_newfstatat\n");
     }
