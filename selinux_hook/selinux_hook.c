@@ -4300,28 +4300,23 @@ static bool is_hidden_module(struct seq_file *m) {
     return false;
 }
 
-/* show_map_vma 실행 전: 현재 버퍼 길이 저장 */
 static void before_show_map_vma(hook_fargs2_t *a, void *u) {
-    // UID 10000 이상인 앱(틱톡, 덕디텍터 등)에만 적용
-    if (current_uid() < 10000) return;
+    // 대상 프로세스 확인 (DuckDetector + zygote 커버)
+    if (!is_target_process()) return;
     
     struct seq_file *m = (struct seq_file *)a->arg0;
-    a->local.data0 = 0;
-    if (m && m->buf) {
-        a->local.data0 = m->count; // 현재까지 쓰인 길이 저장
-    }
+    a->local.data0 = m ? m->count : 0; // 현재까지 쓰인 길이 저장
 }
 
-/* show_map_vma 실행 후: 의심스러운 라인이 있으면 버퍼 길이 복원(취소) */
 static void after_show_map_vma(hook_fargs2_t *a, void *u) {
-    if (current_uid() < 10000) return;
+    if (!is_target_process()) return;
     
     struct seq_file *m = (struct seq_file *)a->arg0;
-    if (m && m->buf && a->local.data0) {
-        if (is_hidden_module(m)) {
-            // 의심스러운 키워드가 발견되면, 저장해둔 길이로 되돌려 해당 라인 출력 취소
-            pr_info("[selinux_hook] HIDE maps -> suspicious module\n");
-            m->count = a->local.data0; 
+    if (m && a->local.data0) {
+        // m->buf에서 방금 추가된 라인에 의심스러운 키워드가 있는지 확인
+        size_t new_len = m->count - a->local.data0;
+        if (new_len > 0 && contains_suspicious_keyword(m->buf + a->local.data0, new_len)) {
+            m->count = a->local.data0; // 의심스러우면 길이를 되돌려 출력 취소
         }
     }
 }
