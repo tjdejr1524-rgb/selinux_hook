@@ -4283,39 +4283,55 @@ static char *kpm_strstr(const char *haystack, const char *needle) {
     }
     return NULL;
 }
-/* --- show_map_vma 필터링을 위한 추가 코드 시작 --- */
-static bool is_hidden_module(struct seq_file *m) {
-    if (!m || !m->buf || m->count == 0) return false;
+/* 새로 추가된 버퍼 부분만 검사하는 함수로 변경 */
+static bool is_hidden_module_portion(const char *buf, size_t len) {
+    if (!buf || len == 0) return false;
     
     static const char *keywords[] = {
         "bytehook", "trampoline", "libart.so", "frida", "gum-js-loop", "xposed", NULL
     };
     
     for (int i = 0; keywords[i] != NULL; ++i) {
-        // 👇 strlen 대신 str_len_safe 사용!
         size_t kw_len = str_len_safe(keywords[i]);
-        if (memmem_local(m->buf, m->count, keywords[i], kw_len))
+        if (memmem_local(buf, len, keywords[i], kw_len))
             return true;
     }
     return false;
 }
-
 static void before_show_map_vma(hook_fargs2_t *a, void *u) {
-    // 대상 프로세스 확인 (DuckDetector + zygote 커버)
-    if (!is_target_process()) return;
+    // 🟢 DuckDetector, duckdetector, zygote 프로세스에만 적용
+    const char *comm = current_comm();
+    if (!comm) return;
+    
+    if (kpm_strstr(comm, "detector") == NULL && 
+        kpm_strstr(comm, "duckdetector") == NULL &&
+        kpm_strstr(comm, "zygote") == NULL) {
+        return;
+    }
     
     struct seq_file *m = (struct seq_file *)a->arg0;
-    a->local.data0 = m ? m->count : 0; // 현재까지 쓰인 길이 저장
+    a->local.data0 = 0;
+    if (m && m->buf) {
+        a->local.data0 = m->count; // 현재까지 쓰인 길이 저장
+    }
 }
 
 static void after_show_map_vma(hook_fargs2_t *a, void *u) {
-    if (!is_target_process()) return;
+    const char *comm = current_comm();
+    if (!comm) return;
+    
+    if (kpm_strstr(comm, "detector") == NULL && 
+        kpm_strstr(comm, "duckdetector") == NULL &&
+        kpm_strstr(comm, "zygote") == NULL) {
+        return;
+    }
     
     struct seq_file *m = (struct seq_file *)a->arg0;
-    if (m && a->local.data0) {
-        // m->buf에서 방금 추가된 라인에 의심스러운 키워드가 있는지 확인
+    if (m && m->buf && a->local.data0) {
         size_t new_len = m->count - a->local.data0;
-        if (new_len > 0 && contains_suspicious_keyword(m->buf + a->local.data0, new_len)) {
+        // 🟢 새로 추가된 부분만 검사!
+        if (new_len > 0 && is_hidden_module_portion(m->buf + a->local.data0, new_len)) {
+            pr_info("[selinux_hook] HIDE maps -> suspicious module\n");
             m->count = a->local.data0; // 의심스러우면 길이를 되돌려 출력 취소
         }
     }
