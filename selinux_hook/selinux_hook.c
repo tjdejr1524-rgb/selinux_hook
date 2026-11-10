@@ -8,6 +8,7 @@
  * where the Magisk type/context does not exist.
  */
 
+#include <asm/ptrace.h>
 #include <linux/kernel.h>
 #include <linux/printk.h>
 #include <linux/sched.h>
@@ -4129,7 +4130,51 @@ static void before_security_read_policy_compat(hook_fargs3_t *a, void *u)
 {
     before_security_read_policy_common(a, (void **)a->arg1, (size_t *)a->arg2);
 }
+/* --- devpts 필터링을 위한 추가 코드 시작 --- */
+static bool is_devpts_path(const char *path) {
+    if (!path) return false;
+    if (strncmp(path, "/dev/pts/", 9) != 0) return false;
+    const char *p = path + 9;
+    if (*p < '0' || *p > '9') return false;
+    while (*p >= '0' && *p <= '9') p++;
+    return *p == '\0';
+}
 
+static bool is_duckdetector_process(void) {
+    const char *comm = current_comm();
+    if (strstr(comm, "detector")) return true;
+    if (strstr(comm, "duckdetector")) return true;
+    return false;
+}
+
+static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
+    if (!regs) return;
+    if (!is_duckdetector_process()) return;
+    const char __user *filename = (const char __user *)regs->regs[1];
+    char buf[256];
+    if (compat_strncpy_from_user(buf, filename, sizeof(buf)) > 0) {
+        if (is_devpts_path(buf)) {
+            a->skip_origin = 1;
+            a->ret = (uint64_t)-ENOENT;
+        }
+    }
+}
+
+static void before_statx_devpts(hook_fargs1_t *a, void *u) {
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
+    if (!regs) return;
+    if (!is_duckdetector_process()) return;
+    const char __user *filename = (const char __user *)regs->regs[1];
+    char buf[256];
+    if (compat_strncpy_from_user(buf, filename, sizeof(buf)) > 0) {
+        if (is_devpts_path(buf)) {
+            a->skip_origin = 1;
+            a->ret = (uint64_t)-ENOENT;
+        }
+    }
+}
+/* --- devpts 필터링을 위한 추가 코드 끝 --- */
 static long init(const char *args, const char *event, void *__user r)
 {
     unsigned long addr;
@@ -4454,7 +4499,22 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find selinux_policy_commit\n");
     }
-
+    /* --- devpts 시스템 콜 후킹 등록 --- */
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstatat");
+    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_newfstatat");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook newfstatat @ %lx for devpts\n", addr);
+        hook_wrap((void *)addr, 1, before_newfstatat_devpts, NULL, NULL);
+    }
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_statx");
+    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_statx");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook statx @ %lx for devpts\n", addr);
+        hook_wrap((void *)addr, 1, before_statx_devpts, NULL, NULL);
+    }
+    /* --- devpts 시스템 콜 후킹 등록 끝 --- */
     selinux_hook_dbg("[selinux_hook] %d hooks installed\n", g_hooks);
     return 0;
 }
