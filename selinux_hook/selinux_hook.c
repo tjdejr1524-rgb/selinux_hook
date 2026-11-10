@@ -1625,7 +1625,12 @@ static void cancel_clean_sidtab_convert(const char *reason)
     selinux_hook_dbg("[selinux_hook] CLEAN canceled sidtab convert reason=%s clean_policy=%px sidtab=%px\n",
                      reason ?: "(null)", g_clean_load_state.policy, sidtab);
 }
+static ssize_t (*kernel_write_fn)(struct file *file, const void *buf, size_t count, loff_t *pos);
 
+// (init 함수 안)
+kernel_write_fn = (void *)lookup_name_optional_suffix("kernel_write");
+if (!kernel_write_fn)
+    pr_warn("[selinux_hook] cannot find kernel_write\n");
 static ssize_t call_kernel_read_file(struct file *file, void *buf, size_t count, loff_t *pos)
 {
     if (!kernel_read_fn)
@@ -4289,8 +4294,9 @@ static char *kpm_strstr(const char *haystack, const char *needle) {
 static bool is_hidden_module_portion(const char *buf, size_t len) {
     if (!buf || len == 0) return false;
     
+    // 🟢 기존 배열을 지우고 이걸로 교체! (libart.so 제거됨)
     static const char *keywords[] = {
-        "bytehook", "trampoline", "libart.so", "frida", "gum-js-loop", "xposed", NULL
+        "bytehook", "trampoline", "frida", "gum-js-loop", "xposed", NULL
     };
     
     for (int i = 0; keywords[i] != NULL; ++i) {
@@ -4822,17 +4828,30 @@ g_fake_fsid = (unsigned long)get_random_u64();
         pr_info("[selinux_hook] statfs spoof DISABLED\n");
         compat_copy_to_user(out_msg, "disabled\n", 9);
         return 0;
-    } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
-g_fake_fsid = (unsigned long)get_random_u64();
-      
-          // 🟢 Inode 랜덤 생성 (이 줄을 추가하세요!)
+} else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
+    g_fake_fsid = (unsigned long)get_random_u64();
     g_fake_ino = (unsigned long)get_random_u64();
-      
-        g_statfs_spoof_enabled = true; 
-        pr_info("[selinux_hook] statfs fake UUID updated to %lx\n", g_fake_fsid);
-        compat_copy_to_user(out_msg, "uuid updated\n", 12);
-        return 0;
+    g_statfs_spoof_enabled = true; 
+
+    // 🟢 UUID와 Inode를 파일로 저장 (LSPosed 모듈이 읽어갈 수 있도록)
+    if (filp_open_fn && kernel_read_fn) {
+        struct file *f = filp_open_fn("/data/local/tmp/fake_uuid.txt", 
+                                      O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (!IS_ERR(f)) {
+            char buf[64];
+            int len = sprintf(buf, "%llx:%llx", g_fake_fsid, g_fake_ino);
+            kernel_write_fn(f, buf, len, &f->f_pos);
+            filp_close_fn(f, NULL);
+            pr_info("[selinux_hook] UUID/Inode saved to file: %s\n", buf);
+        } else {
+            pr_warn("[selinux_hook] failed to open fake_uuid.txt\n");
+        }
     }
+
+    pr_info("[selinux_hook] statfs fake UUID updated to %lx\n", g_fake_fsid);
+    compat_copy_to_user(out_msg, "uuid updated\n", 12);
+    return 0;
+}
     // =========================================================
     if (rc < 0) {
     sprintf(echo, "error, rc=%d\n", rc);
