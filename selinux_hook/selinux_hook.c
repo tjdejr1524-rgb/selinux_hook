@@ -24,6 +24,8 @@
 #include <hook.h>
 #include <kpmodule.h>
 #include <kputils.h>
+#include <linux/random.h>
+
 /* --- statfs UUID 스푸핑을 위한 전역 변수 --- */
 static bool g_statfs_spoof_enabled = false; 
 static unsigned long g_fake_fsid = 0; 
@@ -4711,20 +4713,13 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find selinux_policy_commit\n");
     }
-    /* --- devpts 시스템 콜 후킹 등록 --- */
-    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstatat");
-    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_newfstatat");
-    if (addr) {
-        g_funcs[g_hooks++] = (void *)addr;
-        pr_info("[selinux_hook] hook newfstatat @ %lx for devpts\n", addr);
-        hook_wrap((void *)addr, 1, before_newfstatat_devpts, NULL, NULL);
-    }
+
     addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_statx");
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_statx");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook statx @ %lx for devpts\n", addr);
-        hook_wrap((void *)addr, 1, before_statx_devpts, NULL, NULL);
+         hook_wrap((void *)addr, 1, before_newfstatat_devpts, NULL, NULL);
     }
     /* --- devpts 시스템 콜 후킹 등록 끝 --- */
       /* --- __android_log_buf_write 후킹 등록 --- */
@@ -4748,18 +4743,16 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_statfs\n");
     }
-    /* ---------------------------------- */
-
-    /* --- newfstatat 시스템 콜 후킹 등록 (Inode 위조) --- */
+    /* --- newfstatat 시스템 콜 후킹 등록 (devpts + Inode 통합) --- */
     addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstatat");
+    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_newfstatat");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
-        pr_info("[selinux_hook] hook newfstatat @ %lx for inode spoofing\n", addr);
-        hook_wrap((void *)addr, 1, NULL, after_newfstatat_inode, NULL);
+        pr_info("[selinux_hook] hook newfstatat @ %lx for devpts & inode\n", addr);
+        hook_wrap((void *)addr, 1, before_newfstatat_devpts, after_newfstatat_inode, NULL);
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_newfstatat\n");
     }
-    /* -------------------------------------------------- */
     
     /* --- show_map_vma 후킹 등록 (maps 필터링) --- */
     addr = (unsigned long)lookup_name_optional_suffix("show_map_vma");
