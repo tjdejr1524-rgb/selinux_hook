@@ -1627,10 +1627,7 @@ static void cancel_clean_sidtab_convert(const char *reason)
 }
 static ssize_t (*kernel_write_fn)(struct file *file, const void *buf, size_t count, loff_t *pos);
 
-// (init 함수 안)
-kernel_write_fn = (void *)lookup_name_optional_suffix("kernel_write");
-if (!kernel_write_fn)
-    pr_warn("[selinux_hook] cannot find kernel_write\n");
+
 static ssize_t call_kernel_read_file(struct file *file, void *buf, size_t count, loff_t *pos)
 {
     if (!kernel_read_fn)
@@ -4445,6 +4442,10 @@ static long init(const char *args, const char *event, void *__user r)
     vmalloc_fn = (void *)lookup_name_optional_suffix("vmalloc");
     if (!vmalloc_fn)
         vmalloc_fn = (void *)lookup_name_optional_suffix("vmalloc_noprof");
+      // (init 함수 내부, kernel_read_fn 근처)
+    kernel_write_fn = (void *)lookup_name_optional_suffix("kernel_write");
+    if (!kernel_write_fn)
+        pr_warn("[selinux_hook] cannot find kernel_write\n");
     vfree_fn = (void *)lookup_name_optional_suffix("vfree");
     init_task_ptr = lookup_name_optional_suffix("init_task");
     filp_open_fn = (void *)lookup_name_optional_suffix("filp_open");
@@ -4840,7 +4841,7 @@ g_fake_fsid = (unsigned long)get_random_u64();
         if (!IS_ERR(f)) {
             char buf[64];
             int len = sprintf(buf, "%llx:%llx", g_fake_fsid, g_fake_ino);
-            kernel_write_fn(f, buf, len, &f->f_pos);
+kernel_write_fn(f, buf, len, NULL);
             filp_close_fn(f, NULL);
             pr_info("[selinux_hook] UUID/Inode saved to file: %s\n", buf);
         } else {
