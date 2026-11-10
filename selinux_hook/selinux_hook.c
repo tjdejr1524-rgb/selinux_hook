@@ -4259,15 +4259,9 @@ static char *kpm_strstr(const char *haystack, const char *needle) {
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
     
-    // 🟢 strstr -> kpm_strstr 로 변경
+    // 🟢 프로세스 이름 확인 (kpm_strstr 사용)
     const char *comm = current_comm();
     if (!comm || kpm_strstr(comm, "ss.android") == NULL) return;
-
-    if ((long)a->ret != 0) return;
-    
-    // 🟢 오직 틱톡/틱톡 라이트 프로세스일 때만 작동
-    const char *comm = current_comm();
-    if (!comm || strstr(comm, "ss.android") == NULL) return;
 
     if ((long)a->ret != 0) return;
 
@@ -4287,7 +4281,6 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return; 
 
-    // 🟢 1. 프로세스 이름 확인 (strstr -> kpm_strstr)
     const char *comm = current_comm();
     if (!comm || kpm_strstr(comm, "ss.android") == NULL) return;
 
@@ -4296,21 +4289,18 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
 
-    // 🟢 2. 경로 확인
     const char __user *filename = (const char __user *)regs->regs[1];
     char path[256];
     if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     
-    // 🟢 strstr -> kpm_strstr 로 변경 (여기도 2군데 있습니다!)
     bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
                           (kpm_strstr(path, "ugc.tiktok.lite") != NULL);
     if (!is_target_path) return;
 
-    // 3. 조건을 통과한 경우에만 Inode 위조
     struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
     if (!buf) return;
 
-    // 🟢 고정값 대신, set_uuid 명령으로 생성된 랜덤 변수를 사용!
+    // 🟢 여기에 랜덤 변수(g_fake_ino)가 완벽하게 들어있습니다!
     unsigned long fake_ino = g_fake_ino; 
     if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
 }
