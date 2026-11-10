@@ -4232,7 +4232,7 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!regs) return;
 
     // 3. statfs(path, buf) 에서 두 번째 인자(buf)는 regs->regs[1] 입니다.
-    struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[1];
+    struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[2];
     if (!buf) return;
 
     // 4. f_fsid 값을 가짜 값으로 덮어씀
