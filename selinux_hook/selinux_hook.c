@@ -4184,6 +4184,25 @@ static void before_statx_devpts(hook_fargs1_t *a, void *u) {
         }
     }
 }
+/* --- Vector 로그 필터링을 위한 추가 코드 시작 --- */
+static void before_android_log_buf_write(hook_fargs4_t *a, void *u) {
+    // 1. 훅 대상 프로세스가 아니라면 통과
+    if (!is_target_process()) return;
+
+    // 2. 로그 메시지(tag)와 내용(msg) 포인터 가져오기
+    const char *tag = (const char *)a->arg2;
+    const char *msg = (const char *)a->arg3;
+
+    // 3. tag나 msg에 'selinux_hook' 또는 'Vector'가 포함되어 있으면 로그 기록을 건너뜀
+    if (tag && (kpm_strncmp(tag, "selinux_hook", 12) == 0 || kpm_strncmp(tag, "Vector", 6) == 0)) {
+        a->skip_origin = 1;
+        a->ret = 0; // 로그가 정상적으로 기록된 것처럼 0을 반환
+        return;
+    }
+    // (선택) 메시지 내용에 특정 단어가 포함된 경우도 필터링 가능
+    // if (msg && strstr(msg, "selinux_hook")) { ... }
+}
+/* --- Vector 로그 필터링을 위한 추가 코드 끝 --- */
 /* --- devpts 필터링을 위한 추가 코드 끝 --- */
 static long init(const char *args, const char *event, void *__user r)
 {
@@ -4525,6 +4544,18 @@ static long init(const char *args, const char *event, void *__user r)
         hook_wrap((void *)addr, 1, before_statx_devpts, NULL, NULL);
     }
     /* --- devpts 시스템 콜 후킹 등록 끝 --- */
+      /* --- __android_log_buf_write 후킹 등록 --- */
+    addr = (unsigned long)lookup_name_optional_suffix("__android_log_buf_write");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook __android_log_buf_write @ %lx for log filtering\n", addr);
+        hook_wrap((void *)addr, 4, before_android_log_buf_write, NULL, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find __android_log_buf_write\n");
+    }
+    /* --- __android_log_buf_write 후킹 등록 끝 --- */
+
+    selinux_hook_dbg("[selinux_hook] %d hooks installed\n", g_hooks); // (이 줄은 원래 있던 줄입니다)
     selinux_hook_dbg("[selinux_hook] %d hooks installed\n", g_hooks);
     return 0;
 }
