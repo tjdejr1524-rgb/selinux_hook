@@ -8,7 +8,6 @@
  * where the Magisk type/context does not exist.
  */
 
-#include <linux/uidgid.h>
 #include <asm/ptrace.h>
 #include <linux/kernel.h>
 #include <linux/printk.h>
