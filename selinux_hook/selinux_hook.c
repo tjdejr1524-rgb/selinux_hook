@@ -4130,10 +4130,19 @@ static void before_security_read_policy_compat(hook_fargs3_t *a, void *u)
 {
     before_security_read_policy_common(a, (void **)a->arg1, (size_t *)a->arg2);
 }
+static int kpm_strncmp(const char *s1, const char *s2, unsigned int n) {
+    while (n && *s1 && (*s1 == *s2)) {
+        s1++;
+        s2++;
+        n--;
+    }
+    if (n == 0) return 0;
+    return *(unsigned char *)s1 - *(unsigned char *)s2;
+}
 /* --- devpts 필터링을 위한 추가 코드 시작 --- */
 static bool is_devpts_path(const char *path) {
     if (!path) return false;
-    if (strncmp(path, "/dev/pts/", 9) != 0) return false;
+    if (kpm_strncmp(path, "/dev/pts/", 9) != 0) return false; 
     const char *p = path + 9;
     if (*p < '0' || *p > '9') return false;
     while (*p >= '0' && *p <= '9') p++;
