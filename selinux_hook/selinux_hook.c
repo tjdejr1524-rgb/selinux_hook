@@ -4231,13 +4231,14 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
 
-    // 3. statfs(path, buf) 에서 두 번째 인자(buf)는 regs->regs[1] 입니다.
+    // 3. statfs(path, buf) 에서 두 번째 인자(buf)는 regs->regs[2] 입니다.
+    // (주석에 [1]이라고 적힌 건 오타입니다. 코드는 [2]가 맞습니다.)
     struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[2];
     if (!buf) return;
 
-    // 4. f_fsid 값을 가짜 값으로 덮어씀
-    buf->f_fsid.__val[0] = (int)(g_fake_fsid & 0xFFFFFFFF);
-    buf->f_fsid.__val[1] = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
+    // 4. 🚨 중요: 직접 대입(=) 대신 반드시 put_user를 사용해야 커널 패닉을 피할 수 있습니다.
+    if (put_user((int)(g_fake_fsid & 0xFFFFFFFF), &buf->f_fsid.__val[0])) return;
+    if (put_user((int)((g_fake_fsid >> 32) & 0xFFFFFFFF), &buf->f_fsid.__val[1])) return;
 }
 static long init(const char *args, const char *event, void *__user r)
 {
