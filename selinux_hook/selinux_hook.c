@@ -69,7 +69,7 @@ KPM_DESCRIPTION("Audit and reject Magisk /sys/fs/selinux/access probes");
 
 #define selinux_hook_dbg(fmt, ...) do {} while (0)
 
-static void *g_funcs[16];
+static void *g_funcs[32]; 
 static int g_hooks;
 struct file;
 typedef ssize_t (*sel_write_op_fn)(struct file *file, char *buf, size_t size);
