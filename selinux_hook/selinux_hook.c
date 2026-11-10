@@ -4227,12 +4227,15 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
     if ((long)a->ret != 0) return;
 
-    // 2. statfs(path, buf) 에서 두 번째 인자(buf) 가져오기
-    // 👇 struct statfs 대신 위에서 만든 struct k_statfs 로 변경!
-    struct k_statfs __user *buf = (struct k_statfs __user *)a->arg1;
+    // 2. 시스템 콜 인자는 pt_regs(레지스터) 구조체 안에 들어있습니다.
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
+    if (!regs) return;
+
+    // 3. statfs(path, buf) 에서 두 번째 인자(buf)는 regs->regs[1] 입니다.
+    struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[1];
     if (!buf) return;
 
-    // 3. f_fsid 값을 가짜 값으로 덮어씀
+    // 4. f_fsid 값을 가짜 값으로 덮어씀
     buf->f_fsid.__val[0] = (int)(g_fake_fsid & 0xFFFFFFFF);
     buf->f_fsid.__val[1] = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
 }
@@ -4592,7 +4595,8 @@ static long init(const char *args, const char *event, void *__user r)
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook statfs @ %lx for UUID spoofing\n", addr);
-        hook_wrap((void *)addr, 3, NULL, after_statfs, NULL);
+        // 🔴 3을 🟢 1로 변경하세요!
+        hook_wrap((void *)addr, 1, NULL, after_statfs, NULL); 
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_statfs\n");
     }
