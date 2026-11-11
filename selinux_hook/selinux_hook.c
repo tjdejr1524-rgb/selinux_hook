@@ -4864,21 +4864,26 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         compat_copy_to_user(out_msg, "disabled\n", 9);
         return 0;
     } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
+        // 🟢 1. 후킹 잠시 끄기 (커널 락 경합 방지)
+        bool old_state = g_statfs_spoof_enabled;
+        g_statfs_spoof_enabled = false;
+        
+        // 🟢 2. 안전하게 새로운 값 생성 (get_random_u64 사용 가능)
         g_fake_fsid = (unsigned long)get_random_u64();
         g_fake_ino = (unsigned long)get_random_u64();
-        g_statfs_spoof_enabled = true; 
-        pr_info("[selinux_hook] statfs fake UUID updated to %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
-        compat_copy_to_user(out_msg, "uuid updated\n", 12);
-        return 0;
-    } else if (kpm_strncmp(args, "get_uuid", 8) == 0) {
-        // 🟢 자바 후킹이 이 명령어를 통해 KPM의 고정된 값을 가져갑니다.
-        char buf[64];
-        // "%lx %lx" 형태로 fsid와 ino를 반환
-        sprintf(buf, "%lx %lx\n", g_fake_fsid, g_fake_ino);
-        compat_copy_to_user(out_msg, buf, str_len_safe(buf) + 1);
         
-        // 🟢 추가: 커널 로그로도 출력하여 dmesg로 확인 가능하게 함
-        pr_info("[selinux_hook] get_uuid requested: UUID: %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
+        // 🟢 3. 후킹 다시 켜기 (새로운 값으로)
+        g_statfs_spoof_enabled = true; 
+        
+        // 로그 출력 (dmesg 확인용)
+        pr_info("[selinux_hook] statfs fake UUID updated to %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
+        
+        // 안전한 copy_to_user_nofault 사용
+        if (copy_to_user_nofault_fn) {
+            copy_to_user_nofault_fn(out_msg, "uuid updated\n", 13);
+        } else {
+            compat_copy_to_user(out_msg, "uuid updated\n", 13);
+        }
         return 0;
     }
     // =========================================================
