@@ -4392,6 +4392,37 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     unsigned long fake_ino = g_fake_ino; 
     if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
 }
+/* --- openat 시스템 콜 후킹 콜백 (maps, smaps, pagemap 차단) --- */
+static void before_openat_maps(hook_fargs4_t *a, void *u) {
+    // 1. 일반 앱(UID 10000 이상)이거나 zygote 프로세스인 경우에만 작동
+    if (current_uid() < 10000 && kpm_strstr(current_comm(), "zygote") == NULL) {
+        return;
+    }
+
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
+    if (!regs) return;
+
+    // 2. 앱이 열려고 하는 파일 경로 가져오기
+    const char __user *filename = (const char __user *)regs->regs[1];
+    if (!filename) return;
+
+    char path[256];
+    if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
+
+    // 3. /proc/ 경로인지 확인 후, maps, smaps, pagemap 차단
+    if (kpm_strstr(path, "/proc/") != NULL) {
+        if (kpm_strstr(path, "/maps") != NULL || 
+            kpm_strstr(path, "/smaps") != NULL ||
+            kpm_strstr(path, "/pagemap") != NULL) { // 👈 pagemap 추가!
+            
+            a->skip_origin = 1; // 원본 실행 건너뛰기
+            a->ret = (uint64_t)-ENOENT; // "파일 없음" 에러 반환
+            
+            // (선택) 차단 로그 확인
+            // pr_info("[selinux_hook] BLOCK access: %s\n", path);
+        }
+    }
+}
 static long init(const char *args, const char *event, void *__user r)
 {
     unsigned long addr;
@@ -4769,6 +4800,16 @@ static long init(const char *args, const char *event, void *__user r)
         hook_wrap((void *)addr, 2, before_show_map_vma, after_show_map_vma, NULL);
     } else {
         pr_warn("[selinux_hook] cannot find show_map_vma\n");
+    }
+      /* --- openat 시스템 콜 후킹 등록 (maps/pagemap 차단) --- */
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_openat");
+    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_openat");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook openat @ %lx for pagemap blocking\n", addr);
+        hook_wrap((void *)addr, 1, before_openat_maps, NULL, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find __arm64_sys_openat\n");
     }
     
     return 0;
