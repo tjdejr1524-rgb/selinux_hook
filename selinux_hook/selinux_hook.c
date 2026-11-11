@@ -4454,11 +4454,11 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
         if (buf && copy_to_user_nofault_fn) {
             unsigned int fake_uid = 10000;
             unsigned int fake_gid = 10000;
-            // 🎯 statx 오프셋: stx_uid는 0x10, stx_gid는 0x14 (이전 오프셋 0x14/0x18에서 수정됨!)
-            copy_to_user_nofault_fn((char*)buf + 0x10, &fake_uid, sizeof(unsigned int));
-            copy_to_user_nofault_fn((char*)buf + 0x14, &fake_gid, sizeof(unsigned int));
+            // 🎯 statx 실제 오프셋: stx_uid는 0x14, stx_gid는 0x18
+            copy_to_user_nofault_fn((char*)buf + 0x14, &fake_uid, sizeof(unsigned int));
+            copy_to_user_nofault_fn((char*)buf + 0x18, &fake_gid, sizeof(unsigned int));
         }
-        return; // 위조 후 종료
+        return;
     }
     // 🟢 추가 끝!
 
