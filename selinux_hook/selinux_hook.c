@@ -4392,35 +4392,40 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     unsigned long fake_ino = g_fake_ino; 
     if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
 }
-// 👇 여기에 넣으세요!
 static void before_openat_maps(hook_fargs4_t *a, void *u) {
     const char *comm = current_comm();
     if (!comm) return;
 
-    if (kpm_strstr(comm, "zygote") != NULL ||
-        kpm_strstr(comm, "zygiskd") != NULL) {
+    // 🟢 1. Zygisk/Vector 핵심 프로세스 보호
+    if (kpm_strstr(comm, "zygote") != NULL || kpm_strstr(comm, "zygiskd") != NULL) {
+        return;
+    }
+    
+    // 🟢 2. 시스템 프로세스 보호 (부팅 안정성 확보)
+    if (current_uid() < 10000) {
         return;
     }
 
-    bool is_target = (kpm_strstr(comm, "detector") != NULL) ||
-                     (kpm_strstr(comm, "duckdetector") != NULL) ||
-                     (kpm_strstr(comm, "ss.android") != NULL) ||
-                     (kpm_strstr(comm, "tiktok") != NULL);
-    if (!is_target) return;
-
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
-
+    
     const char __user *filename = (const char __user *)regs->regs[1];
     if (!filename) return;
-
+    
     char path[256];
     if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
 
-    if (kpm_strstr(path, "/proc/") != NULL) {
-        if (kpm_strstr(path, "/pagemap") != NULL) {
-            a->skip_origin = 1;
-            a->ret = (uint64_t)-ENOENT; 
+    // 🟢 3. 대상 앱(덕디텍터, 틱톡)의 pagemap 접근만 차단
+    if (kpm_strstr(path, "/proc/") != NULL && kpm_strstr(path, "/pagemap") != NULL) {
+        
+        bool is_target = (kpm_strstr(comm, "detector") != NULL) ||
+                         (kpm_strstr(comm, "duckdetector") != NULL) ||
+                         (kpm_strstr(comm, "ss.android") != NULL) ||
+                         (kpm_strstr(comm, "tiktok") != NULL);
+                         
+        if (is_target) {
+            a->skip_origin = 1; 
+            a->ret = (uint64_t)-ENOENT;
         }
     }
 }
