@@ -28,6 +28,8 @@
 static bool g_statfs_spoof_enabled = false; 
 static unsigned long g_fake_fsid = 0; 
 static unsigned long g_fake_ino = 0; 
+static char *kpm_strstr(const char *haystack, const char *needle);
+
 
 /* ------------------------------------------ */
 
@@ -4205,8 +4207,7 @@ static void before_android_log_buf_write(hook_fargs4_t *a, void *u) {
 
     // 2. 로그 메시지(tag)와 내용(msg) 포인터 가져오기
     const char *tag = (const char *)a->arg2;
-    const char *msg = (const char *)a->arg3;
-
+    (void)a->arg3; // 🟢 이렇게 써주면 경고가 사라집니다.
     // 3. tag나 msg에 'selinux_hook' 또는 'Vector'가 포함되어 있으면 로그 기록을 건너뜀
     if (tag && (kpm_strncmp(tag, "selinux_hook", 12) == 0 || kpm_strncmp(tag, "Vector", 6) == 0)) {
         a->skip_origin = 1;
