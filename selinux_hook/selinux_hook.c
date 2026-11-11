@@ -4940,6 +4940,18 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         }
         return 0;
     }
+      } else if (kpm_strncmp(args, "get_uuid", 8) == 0) {
+        char buf[64];
+        sprintf(buf, "%lx %lx\n", g_fake_fsid, g_fake_ino);
+        if (copy_to_user_nofault_fn) {
+            copy_to_user_nofault_fn(out_msg, buf, str_len_safe(buf) + 1);
+        } else {
+            compat_copy_to_user(out_msg, buf, str_len_safe(buf) + 1);
+        }
+        // 🟢 dmesg에 현재 UUID/INO 로그 남기기
+        pr_info("[selinux_hook] get_uuid requested: UUID: %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
+        return 0;
+    }
     // =========================================================
     if (rc < 0) {
     sprintf(echo, "error, rc=%d\n", rc);
