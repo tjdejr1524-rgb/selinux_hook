@@ -4377,7 +4377,14 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
 
     const char __user *filename = (const char __user *)regs->regs[1];
     char path[256];
-    if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
+    
+    // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(path, filename, 255) != 0) return;
+        path[255] = '\0';
+    } else {
+        if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
+    }
     
     // 🟢 타겟 앱의 데이터 경로에서만 동작하도록 제한 (성능 최적화)
     bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
@@ -4409,8 +4416,14 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
 
     const char __user *filename = (const char __user *)regs->regs[1];
     char path[256];
-    if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     
+    // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(path, filename, 255) != 0) return;
+        path[255] = '\0';
+    } else {
+        if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
+    }
     bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
                           (kpm_strstr(path, "ugc.tiktok.lite") != NULL) ||
                           (kpm_strstr(path, "com.eltavine.duckdetector") != NULL);
@@ -4863,22 +4876,25 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         pr_info("[selinux_hook] statfs spoof DISABLED\n");
         compat_copy_to_user(out_msg, "disabled\n", 9);
         return 0;
-    } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
-        // 🟢 1. 후킹 잠시 끄기 (커널 락 경합 방지)
-        bool old_state = g_statfs_spoof_enabled;
-        g_statfs_spoof_enabled = false;
+      } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
+        // 🟢 후킹 잠시 끄기
+        WRITE_ONCE(g_statfs_spoof_enabled, false);
         
-        // 🟢 2. 안전하게 새로운 값 생성 (get_random_u64 사용 가능)
-        g_fake_fsid = (unsigned long)get_random_u64();
-        g_fake_ino = (unsigned long)get_random_u64();
+        // 🟢 커널 락을 전혀 쓰지 않는 LCG 난수 생성
+        if (g_rng_state == 0) {
+            g_rng_state = (unsigned long)get_random_u64(); // 최초 1회만
+        }
+        g_rng_state = g_rng_state * 6364136223846793005UL + 1442695040888963407UL;
+        g_fake_fsid = g_rng_state;
         
-        // 🟢 3. 후킹 다시 켜기 (새로운 값으로)
-        g_statfs_spoof_enabled = true; 
+        g_rng_state = g_rng_state * 6364136223846793005UL + 1442695040888963407UL;
+        g_fake_ino = g_rng_state;
         
-        // 로그 출력 (dmesg 확인용)
+        // 🟢 후킹 다시 켜기
+        WRITE_ONCE(g_statfs_spoof_enabled, true); 
+        
         pr_info("[selinux_hook] statfs fake UUID updated to %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
         
-        // 안전한 copy_to_user_nofault 사용
         if (copy_to_user_nofault_fn) {
             copy_to_user_nofault_fn(out_msg, "uuid updated\n", 13);
         } else {
