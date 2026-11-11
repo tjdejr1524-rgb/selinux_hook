@@ -4402,23 +4402,22 @@ static void before_openat_maps(hook_fargs4_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
 
-    // 2. 앱이 열려고 하는 파일 경로 가져오기
     const char __user *filename = (const char __user *)regs->regs[1];
     if (!filename) return;
 
     char path[256];
     if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
 
-    // 3. /proc/ 경로인지 확인 후, maps, smaps, pagemap 차단
+    // 2. /proc/ 경로인지 확인 후, maps, smaps, pagemap 차단
     if (kpm_strstr(path, "/proc/") != NULL) {
         if (kpm_strstr(path, "/maps") != NULL || 
             kpm_strstr(path, "/smaps") != NULL ||
-            kpm_strstr(path, "/pagemap") != NULL) { // 👈 pagemap 추가!
+            kpm_strstr(path, "/pagemap") != NULL) {
             
-            a->skip_origin = 1; // 원본 실행 건너뛰기
-            a->ret = (uint64_t)-ENOENT; // "파일 없음" 에러 반환
+            a->skip_origin = 1;
+            // 🟢 여기를 -EACCES(권한 없음)로 변경!
+            a->ret = (uint64_t)-EACCES; 
             
-            // (선택) 차단 로그 확인
             // pr_info("[selinux_hook] BLOCK access: %s\n", path);
         }
     }
