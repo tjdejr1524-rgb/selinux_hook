@@ -4221,6 +4221,7 @@ static void before_statx_devpts(hook_fargs1_t *a, void *u) {
 static void before_android_log_buf_write(hook_fargs4_t *a, void *u) {
     // 1. 훅 대상 프로세스가 아니라면 통과
     if (!is_target_process()) return;
+    if (!is_tiktok_or_duck(current_comm())) return; // 👈 이 줄 추가!
 
     // 2. 로그 메시지(tag)와 내용(msg) 포인터 가져오기
     const char *tag = (const char *)a->arg2;
@@ -4326,26 +4327,26 @@ static bool is_hidden_module(struct seq_file *m) {
     return false;
 }
 
-/* show_map_vma 실행 전: 현재 버퍼 길이 저장 */
 static void before_show_map_vma(hook_fargs2_t *a, void *u) {
-    // UID 10000 이상인 앱(틱톡, 덕디텍터 등)에만 적용
+    // 🟢 UID 체크 + 타겟 앱(틱톡/덕디텍터) 체크 추가
     if (current_uid() < 10000) return;
+    if (!is_tiktok_or_duck(current_comm())) return; // 👈 이 줄 추가!
     
     struct seq_file *m = (struct seq_file *)a->arg0;
     a->local.data0 = 0;
     if (m && m->buf) {
-        a->local.data0 = m->count; // 현재까지 쓰인 길이 저장
+        a->local.data0 = m->count; 
     }
 }
 
-/* show_map_vma 실행 후: 의심스러운 라인이 있으면 버퍼 길이 복원(취소) */
 static void after_show_map_vma(hook_fargs2_t *a, void *u) {
+    // 🟢 UID 체크 + 타겟 앱(틱톡/덕디텍터) 체크 추가
     if (current_uid() < 10000) return;
+    if (!is_tiktok_or_duck(current_comm())) return; // 👈 이 줄 추가!
     
     struct seq_file *m = (struct seq_file *)a->arg0;
     if (m && m->buf && a->local.data0) {
         if (is_hidden_module(m)) {
-            // 의심스러운 키워드가 발견되면, 저장해둔 길이로 되돌려 해당 라인 출력 취소
             pr_info("[selinux_hook] HIDE maps -> suspicious module\n");
             m->count = a->local.data0; 
         }
@@ -4381,12 +4382,8 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
 /* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return; 
-
-    // 🟢 추가: 시스템 프로세스는 즉시 리턴
     if (current_uid() < 10000) return;
-
     if (!is_tiktok_or_duck(current_comm())) return;
-
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
@@ -4395,15 +4392,28 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     const char __user *filename = (const char __user *)regs->regs[1];
     char path[256];
     
-    // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
+    // (경로 읽기 - 기존과 동일)
     if (copy_from_kernel_nofault_fn) {
         if (copy_from_kernel_nofault_fn(path, filename, 255) != 0) return;
         path[255] = '\0';
     } else {
         if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     }
-    
-    // 🟢 타겟 앱의 데이터 경로에서만 동작하도록 제한 (성능 최적화)
+
+    // 🟢 여기서부터 추가! (/dev/pts UID/GID 위조)
+    if (is_devpts_path(path)) {
+        struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
+        if (buf && copy_to_user_nofault_fn) {
+            unsigned int fake_uid = 10000; // 일반 앱 UID
+            unsigned int fake_gid = 10000; // 일반 앱 GID
+            copy_to_user_nofault_fn(&buf->st_uid, &fake_uid, sizeof(unsigned int));
+            copy_to_user_nofault_fn(&buf->st_gid, &fake_gid, sizeof(unsigned int));
+        }
+        return; // 위조 후 종료
+    }
+    // 🟢 추가 끝!
+
+    // (기존 inode 위조 코드 - 아래에 그대로 둡니다)
     bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
                           (kpm_strstr(path, "ugc.tiktok.lite") != NULL) ||
                           (kpm_strstr(path, "com.eltavine.duckdetector") != NULL);
@@ -4413,19 +4423,15 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!buf) return;
 
     unsigned long fake_ino = g_fake_ino; 
-  if (copy_to_user_nofault_fn) {
+    if (copy_to_user_nofault_fn) {
         if (copy_to_user_nofault_fn(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
     }
 }
 /* --- statx 시스템 콜 후킹 콜백 (최신 안드로이드 대응) --- */
 static void after_statx_inode(hook_fargs5_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
-
-    // 🟢 추가: 시스템 프로세스는 즉시 리턴
     if (current_uid() < 10000) return;
-
     if (!is_tiktok_or_duck(current_comm())) return;
-
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
@@ -4434,24 +4440,39 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
     const char __user *filename = (const char __user *)regs->regs[1];
     char path[256];
     
-    // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
+    // (경로 읽기 - 기존과 동일)
     if (copy_from_kernel_nofault_fn) {
         if (copy_from_kernel_nofault_fn(path, filename, 255) != 0) return;
         path[255] = '\0';
     } else {
         if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     }
+
+    // 🟢 여기서부터 추가! (/dev/pts UID/GID 위조)
+    if (is_devpts_path(path)) {
+        void __user *buf = (void __user *)regs->regs[4]; 
+        if (buf && copy_to_user_nofault_fn) {
+            unsigned int fake_uid = 10000;
+            unsigned int fake_gid = 10000;
+            // 🎯 statx 오프셋: stx_uid는 0x10, stx_gid는 0x14 (이전 오프셋 0x14/0x18에서 수정됨!)
+            copy_to_user_nofault_fn((char*)buf + 0x10, &fake_uid, sizeof(unsigned int));
+            copy_to_user_nofault_fn((char*)buf + 0x14, &fake_gid, sizeof(unsigned int));
+        }
+        return; // 위조 후 종료
+    }
+    // 🟢 추가 끝!
+
+    // (기존 inode 위조 코드 - 아래에 그대로 둡니다)
     bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
                           (kpm_strstr(path, "ugc.tiktok.lite") != NULL) ||
                           (kpm_strstr(path, "com.eltavine.duckdetector") != NULL);
     if (!is_target_path) return;
 
-    // statx의 buffer는 5번째 인자(regs[4])
     void __user *buf = (void __user *)regs->regs[4]; 
     if (!buf) return;
 
     unsigned long fake_ino = g_fake_ino;
-   if (copy_to_user_nofault_fn) {
+    if (copy_to_user_nofault_fn) {
         copy_to_user_nofault_fn((char*)buf + 0x20, &fake_ino, sizeof(unsigned long));
     }
 }
