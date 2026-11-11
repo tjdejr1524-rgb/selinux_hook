@@ -4339,7 +4339,9 @@ static void after_show_map_vma(hook_fargs2_t *a, void *u) {
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
     
-    // 🟢 여기를 수정 (기존 ss.android 검사 삭제)
+    // 🟢 추가: 시스템 프로세스는 즉시 리턴 (렉 방지)
+    if (current_uid() < 10000) return; 
+    
     if (!is_tiktok_or_duck(current_comm())) return; 
 
     if ((long)a->ret != 0) return;
@@ -4360,7 +4362,9 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return; 
 
-    // 🟢 여기를 수정
+    // 🟢 추가: 시스템 프로세스는 즉시 리턴
+    if (current_uid() < 10000) return;
+
     if (!is_tiktok_or_duck(current_comm())) return;
 
     if ((long)a->ret != 0) return;
@@ -4388,7 +4392,9 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
 static void after_statx_inode(hook_fargs5_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
 
-    // 🟢 틱톡/덕디텍터만
+    // 🟢 추가: 시스템 프로세스는 즉시 리턴
+    if (current_uid() < 10000) return;
+
     if (!is_tiktok_or_duck(current_comm())) return;
 
     if ((long)a->ret != 0) return;
