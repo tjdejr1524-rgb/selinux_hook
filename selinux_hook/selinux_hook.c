@@ -4866,8 +4866,9 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         compat_copy_to_user(out_msg, "uuid updated\n", 12);
         return 0;
     } else if (kpm_strncmp(args, "get_uuid", 8) == 0) {
-        // 🟢 추가: 자바 후킹이 KPM의 값을 읽어갈 수 있도록 함
+        // 🟢 자바 후킹이 이 명령어를 통해 KPM의 고정된 값을 가져갑니다.
         char buf[64];
+        // "%lx %lx" 형태로 fsid와 ino를 반환
         sprintf(buf, "%lx %lx\n", g_fake_fsid, g_fake_ino);
         compat_copy_to_user(out_msg, buf, str_len_safe(buf) + 1);
         return 0;
