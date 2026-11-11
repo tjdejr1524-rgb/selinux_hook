@@ -4892,17 +4892,13 @@ static long exit_(void *__user r)
     return 0;
 }
 static long control(const char* args, char* __user out_msg, int outlen) {
-
     int rc = 0;
     char echo[64];
 
     zero_bytes(echo, sizeof(echo));
-    // =========================================================
-    // 👇👇👇 여기서부터 새로 추가하는 코드입니다 👇👇👇
-    // =========================================================
+
     if (kpm_strncmp(args, "enable", 6) == 0) {
         g_statfs_spoof_enabled = true;
-        // 🟢 FSID와 INO 둘 다 초기화 확인
         if (g_fake_fsid == 0) g_fake_fsid = (unsigned long)get_random_u64(); 
         if (g_fake_ino == 0)  g_fake_ino = (unsigned long)get_random_u64(); 
         
@@ -4915,12 +4911,10 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         compat_copy_to_user(out_msg, "disabled\n", 9);
         return 0;
     } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
-        // 🟢 후킹 잠시 끄기
         g_statfs_spoof_enabled = false;
         
-        // 🟢 커널 락을 쓰지 않는 LCG 난수 생성
         if (g_rng_state == 0) {
-            g_rng_state = (unsigned long)get_random_u64(); // 최초 1회만
+            g_rng_state = (unsigned long)get_random_u64();
         }
         g_rng_state = g_rng_state * 6364136223846793005UL + 1442695040888963407UL;
         g_fake_fsid = g_rng_state;
@@ -4928,7 +4922,6 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         g_rng_state = g_rng_state * 6364136223846793005UL + 1442695040888963407UL;
         g_fake_ino = g_rng_state;
         
-        // 🟢 후킹 다시 켜기
         g_statfs_spoof_enabled = true; 
         
         pr_info("[selinux_hook] statfs fake UUID updated to %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
@@ -4939,8 +4932,7 @@ static long control(const char* args, char* __user out_msg, int outlen) {
             compat_copy_to_user(out_msg, "uuid updated\n", 13);
         }
         return 0;
-    }
-      } else if (kpm_strncmp(args, "get_uuid", 8) == 0) {
+    } else if (kpm_strncmp(args, "get_uuid", 8) == 0) {
         char buf[64];
         sprintf(buf, "%lx %lx\n", g_fake_fsid, g_fake_ino);
         if (copy_to_user_nofault_fn) {
@@ -4948,13 +4940,12 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         } else {
             compat_copy_to_user(out_msg, buf, str_len_safe(buf) + 1);
         }
-        // 🟢 dmesg에 현재 UUID/INO 로그 남기기
         pr_info("[selinux_hook] get_uuid requested: UUID: %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
         return 0;
     }
-    // =========================================================
+
     if (rc < 0) {
-    sprintf(echo, "error, rc=%d\n", rc);
+        sprintf(echo, "error, rc=%d\n", rc);
         logke("fg_sram_write %s", echo);
         if (out_msg) {
             compat_copy_to_user(out_msg, echo, sizeof(echo));
