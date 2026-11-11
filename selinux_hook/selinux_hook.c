@@ -4871,6 +4871,9 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         // "%lx %lx" 형태로 fsid와 ino를 반환
         sprintf(buf, "%lx %lx\n", g_fake_fsid, g_fake_ino);
         compat_copy_to_user(out_msg, buf, str_len_safe(buf) + 1);
+        
+        // 🟢 추가: 커널 로그로도 출력하여 dmesg로 확인 가능하게 함
+        pr_info("[selinux_hook] get_uuid requested: UUID: %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
         return 0;
     }
     // =========================================================
