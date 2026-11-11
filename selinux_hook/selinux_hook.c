@@ -4356,8 +4356,10 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     int val0 = (int)(g_fake_fsid & 0xFFFFFFFF);
     int val1 = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
 
-    if (compat_copy_to_user(&buf->f_fsid.__val[0], &val0, sizeof(int)) != 0) return;
-    if (compat_copy_to_user(&buf->f_fsid.__val[1], &val1, sizeof(int)) != 0) return;
+   if (copy_to_user_nofault_fn) {
+        if (copy_to_user_nofault_fn(&buf->f_fsid.__val[0], &val0, sizeof(int)) != 0) return;
+        if (copy_to_user_nofault_fn(&buf->f_fsid.__val[1], &val1, sizeof(int)) != 0) return;
+    }
 }
 /* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
@@ -4387,7 +4389,9 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!buf) return;
 
     unsigned long fake_ino = g_fake_ino; 
-    if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
+  if (copy_to_user_nofault_fn) {
+        if (copy_to_user_nofault_fn(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
+    }
 }
 /* --- statx 시스템 콜 후킹 콜백 (최신 안드로이드 대응) --- */
 static void after_statx_inode(hook_fargs5_t *a, void *u) {
@@ -4417,8 +4421,9 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
     if (!buf) return;
 
     unsigned long fake_ino = g_fake_ino;
-    // struct statx 내 stx_ino 오프셋은 0x20 (32바이트)
-    compat_copy_to_user((char*)buf + 0x20, &fake_ino, sizeof(unsigned long));
+   if (copy_to_user_nofault_fn) {
+        copy_to_user_nofault_fn((char*)buf + 0x20, &fake_ino, sizeof(unsigned long));
+    }
 }
 static long init(const char *args, const char *event, void *__user r)
 {
