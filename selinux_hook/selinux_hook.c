@@ -28,6 +28,7 @@
 static bool g_statfs_spoof_enabled = false; 
 static unsigned long g_fake_fsid = 0; 
 static unsigned long g_fake_ino = 0; 
+static unsigned long g_rng_state = 0; 
 static char *kpm_strstr(const char *haystack, const char *needle);
 
 
@@ -4876,11 +4877,11 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         pr_info("[selinux_hook] statfs spoof DISABLED\n");
         compat_copy_to_user(out_msg, "disabled\n", 9);
         return 0;
-      } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
+    } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
         // 🟢 후킹 잠시 끄기
-        WRITE_ONCE(g_statfs_spoof_enabled, false);
+        g_statfs_spoof_enabled = false;
         
-        // 🟢 커널 락을 전혀 쓰지 않는 LCG 난수 생성
+        // 🟢 커널 락을 쓰지 않는 LCG 난수 생성
         if (g_rng_state == 0) {
             g_rng_state = (unsigned long)get_random_u64(); // 최초 1회만
         }
@@ -4891,7 +4892,7 @@ static long control(const char* args, char* __user out_msg, int outlen) {
         g_fake_ino = g_rng_state;
         
         // 🟢 후킹 다시 켜기
-        WRITE_ONCE(g_statfs_spoof_enabled, true); 
+        g_statfs_spoof_enabled = true; 
         
         pr_info("[selinux_hook] statfs fake UUID updated to %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
         
