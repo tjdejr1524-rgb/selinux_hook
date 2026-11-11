@@ -24,8 +24,6 @@
 #include <hook.h>
 #include <kpmodule.h>
 #include <kputils.h>
-#include <linux/random.h>
-
 /* --- statfs UUID 스푸핑을 위한 전역 변수 --- */
 static bool g_statfs_spoof_enabled = false; 
 static unsigned long g_fake_fsid = 0; 
@@ -1625,8 +1623,6 @@ static void cancel_clean_sidtab_convert(const char *reason)
     selinux_hook_dbg("[selinux_hook] CLEAN canceled sidtab convert reason=%s clean_policy=%px sidtab=%px\n",
                      reason ?: "(null)", g_clean_load_state.policy, sidtab);
 }
-static ssize_t (*kernel_write_fn)(struct file *file, const void *buf, size_t count, loff_t *pos);
-
 
 static ssize_t call_kernel_read_file(struct file *file, void *buf, size_t count, loff_t *pos)
 {
@@ -4287,32 +4283,27 @@ static char *kpm_strstr(const char *haystack, const char *needle) {
     }
     return NULL;
 }
-/* 새로 추가된 버퍼 부분만 검사하는 함수로 변경 */
-static bool is_hidden_module_portion(const char *buf, size_t len) {
-    if (!buf || len == 0) return false;
+/* --- show_map_vma 필터링을 위한 추가 코드 시작 --- */
+static bool is_hidden_module(struct seq_file *m) {
+    if (!m || !m->buf || m->count == 0) return false;
     
-    // 🟢 기존 배열을 지우고 이걸로 교체! (libart.so 제거됨)
     static const char *keywords[] = {
-        "bytehook", "trampoline", "frida", "gum-js-loop", "xposed", NULL
+        "bytehook", "trampoline", "libart.so", "frida", "gum-js-loop", "xposed", NULL
     };
     
     for (int i = 0; keywords[i] != NULL; ++i) {
+        // 👇 strlen 대신 str_len_safe 사용!
         size_t kw_len = str_len_safe(keywords[i]);
-        if (memmem_local(buf, len, keywords[i], kw_len))
+        if (memmem_local(m->buf, m->count, keywords[i], kw_len))
             return true;
     }
     return false;
 }
+
+/* show_map_vma 실행 전: 현재 버퍼 길이 저장 */
 static void before_show_map_vma(hook_fargs2_t *a, void *u) {
-    // 🟢 DuckDetector, duckdetector, zygote 프로세스에만 적용
-    const char *comm = current_comm();
-    if (!comm) return;
-    
-    if (kpm_strstr(comm, "detector") == NULL && 
-        kpm_strstr(comm, "duckdetector") == NULL &&
-        kpm_strstr(comm, "zygote") == NULL) {
-        return;
-    }
+    // UID 10000 이상인 앱(틱톡, 덕디텍터 등)에만 적용
+    if (current_uid() < 10000) return;
     
     struct seq_file *m = (struct seq_file *)a->arg0;
     a->local.data0 = 0;
@@ -4321,23 +4312,16 @@ static void before_show_map_vma(hook_fargs2_t *a, void *u) {
     }
 }
 
+/* show_map_vma 실행 후: 의심스러운 라인이 있으면 버퍼 길이 복원(취소) */
 static void after_show_map_vma(hook_fargs2_t *a, void *u) {
-    const char *comm = current_comm();
-    if (!comm) return;
-    
-    if (kpm_strstr(comm, "detector") == NULL && 
-        kpm_strstr(comm, "duckdetector") == NULL &&
-        kpm_strstr(comm, "zygote") == NULL) {
-        return;
-    }
+    if (current_uid() < 10000) return;
     
     struct seq_file *m = (struct seq_file *)a->arg0;
     if (m && m->buf && a->local.data0) {
-        size_t new_len = m->count - a->local.data0;
-        // 🟢 새로 추가된 부분만 검사!
-        if (new_len > 0 && is_hidden_module_portion(m->buf + a->local.data0, new_len)) {
+        if (is_hidden_module(m)) {
+            // 의심스러운 키워드가 발견되면, 저장해둔 길이로 되돌려 해당 라인 출력 취소
             pr_info("[selinux_hook] HIDE maps -> suspicious module\n");
-            m->count = a->local.data0; // 의심스러우면 길이를 되돌려 출력 취소
+            m->count = a->local.data0; 
         }
     }
 }
@@ -4392,45 +4376,6 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     unsigned long fake_ino = g_fake_ino; 
     if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
 }
-static void before_openat_maps(hook_fargs4_t *a, void *u) {
-    const char *comm = current_comm();
-    if (!comm) return;
-
-    // 🟢 1. Zygisk/Vector 핵심 프로세스 보호
-    if (kpm_strstr(comm, "zygote") != NULL || kpm_strstr(comm, "zygiskd") != NULL) {
-        return;
-    }
-    
-    // 🟢 2. 시스템 프로세스 보호 (부팅 안정성 확보)
-    if (current_uid() < 10000) {
-        return;
-    }
-
-    struct pt_regs *regs = (struct pt_regs *)a->arg0;
-    if (!regs) return;
-    
-    const char __user *filename = (const char __user *)regs->regs[1];
-    if (!filename) return;
-    
-    char path[256];
-    if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
-
-    // 🟢 3. 대상 앱(덕디텍터, 틱톡)의 pagemap 접근만 차단
-    if (kpm_strstr(path, "/proc/") != NULL && kpm_strstr(path, "/pagemap") != NULL) {
-        
-        bool is_target = (kpm_strstr(comm, "detector") != NULL) ||
-                         (kpm_strstr(comm, "duckdetector") != NULL) ||
-                         (kpm_strstr(comm, "ss.android") != NULL) ||
-                         (kpm_strstr(comm, "tiktok") != NULL);
-                         
-        if (is_target) {
-            a->skip_origin = 1; 
-            a->ret = (uint64_t)-ENOENT;
-        }
-    }
-}
-
-// 👇 init 함수 시작
 static long init(const char *args, const char *event, void *__user r)
 {
     unsigned long addr;
@@ -4481,10 +4426,6 @@ static long init(const char *args, const char *event, void *__user r)
     vmalloc_fn = (void *)lookup_name_optional_suffix("vmalloc");
     if (!vmalloc_fn)
         vmalloc_fn = (void *)lookup_name_optional_suffix("vmalloc_noprof");
-      // (init 함수 내부, kernel_read_fn 근처)
-    kernel_write_fn = (void *)lookup_name_optional_suffix("kernel_write");
-    if (!kernel_write_fn)
-        pr_warn("[selinux_hook] cannot find kernel_write\n");
     vfree_fn = (void *)lookup_name_optional_suffix("vfree");
     init_task_ptr = lookup_name_optional_suffix("init_task");
     filp_open_fn = (void *)lookup_name_optional_suffix("filp_open");
@@ -4765,7 +4706,7 @@ static long init(const char *args, const char *event, void *__user r)
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook statx @ %lx for devpts\n", addr);
-         hook_wrap((void *)addr, 1, before_statx_devpts, NULL, NULL);
+        hook_wrap((void *)addr, 1, before_statx_devpts, NULL, NULL);
     }
     /* --- devpts 시스템 콜 후킹 등록 끝 --- */
       /* --- __android_log_buf_write 후킹 등록 --- */
@@ -4789,16 +4730,20 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_statfs\n");
     }
+    /* ---------------------------------- */
+
     /* --- newfstatat 시스템 콜 후킹 등록 (devpts + Inode 통합) --- */
     addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstatat");
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_newfstatat");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook newfstatat @ %lx for devpts & inode\n", addr);
+        // 🟢 before(devpts)와 after(inode)를 한 번에 등록!
         hook_wrap((void *)addr, 1, before_newfstatat_devpts, after_newfstatat_inode, NULL);
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_newfstatat\n");
     }
+    /* -------------------------------------------------- */
     
     /* --- show_map_vma 후킹 등록 (maps 필터링) --- */
     addr = (unsigned long)lookup_name_optional_suffix("show_map_vma");
@@ -4808,16 +4753,6 @@ static long init(const char *args, const char *event, void *__user r)
         hook_wrap((void *)addr, 2, before_show_map_vma, after_show_map_vma, NULL);
     } else {
         pr_warn("[selinux_hook] cannot find show_map_vma\n");
-    }
-      /* --- openat 시스템 콜 후킹 등록 (maps/pagemap 차단) --- */
-    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_openat");
-    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_openat");
-    if (addr) {
-        g_funcs[g_hooks++] = (void *)addr;
-        pr_info("[selinux_hook] hook openat @ %lx for pagemap blocking\n", addr);
-        hook_wrap((void *)addr, 1, before_openat_maps, NULL, NULL);
-    } else {
-        pr_warn("[selinux_hook] cannot find __arm64_sys_openat\n");
     }
     
     return 0;
@@ -4878,30 +4813,17 @@ g_fake_fsid = (unsigned long)get_random_u64();
         pr_info("[selinux_hook] statfs spoof DISABLED\n");
         compat_copy_to_user(out_msg, "disabled\n", 9);
         return 0;
-} else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
-    g_fake_fsid = (unsigned long)get_random_u64();
+    } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
+g_fake_fsid = (unsigned long)get_random_u64();
+      
+          // 🟢 Inode 랜덤 생성 (이 줄을 추가하세요!)
     g_fake_ino = (unsigned long)get_random_u64();
-    g_statfs_spoof_enabled = true; 
-
-    // 🟢 UUID와 Inode를 파일로 저장 (LSPosed 모듈이 읽어갈 수 있도록)
-    if (filp_open_fn && kernel_read_fn) {
-        struct file *f = filp_open_fn("/data/local/tmp/fake_uuid.txt", 
-                                      O_WRONLY | O_CREAT | O_TRUNC, 0666);
-        if (!IS_ERR(f)) {
-            char buf[64];
-            int len = sprintf(buf, "%llx:%llx", g_fake_fsid, g_fake_ino);
-kernel_write_fn(f, buf, len, NULL);
-            filp_close_fn(f, NULL);
-            pr_info("[selinux_hook] UUID/Inode saved to file: %s\n", buf);
-        } else {
-            pr_warn("[selinux_hook] failed to open fake_uuid.txt\n");
-        }
+      
+        g_statfs_spoof_enabled = true; 
+        pr_info("[selinux_hook] statfs fake UUID updated to %lx\n", g_fake_fsid);
+        compat_copy_to_user(out_msg, "uuid updated\n", 12);
+        return 0;
     }
-
-    pr_info("[selinux_hook] statfs fake UUID updated to %lx\n", g_fake_fsid);
-    compat_copy_to_user(out_msg, "uuid updated\n", 12);
-    return 0;
-}
     // =========================================================
     if (rc < 0) {
     sprintf(echo, "error, rc=%d\n", rc);
