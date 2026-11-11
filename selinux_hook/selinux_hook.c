@@ -4743,7 +4743,7 @@ static long init(const char *args, const char *event, void *__user r)
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook statx @ %lx for devpts\n", addr);
-        hook_wrap((void *)addr, 1, before_statx_devpts, NULL, NULL);
+        hook_wrap((void *)addr, 1, before_statx_devpts, after_statx_inode, NULL); 
     }
     /* --- devpts 시스템 콜 후킹 등록 끝 --- */
       /* --- __android_log_buf_write 후킹 등록 --- */
@@ -4839,10 +4839,11 @@ static long control(const char* args, char* __user out_msg, int outlen) {
     // =========================================================
     if (kpm_strncmp(args, "enable", 6) == 0) {
         g_statfs_spoof_enabled = true;
-        if (g_fake_fsid == 0) {
-g_fake_fsid = (unsigned long)get_random_u64(); 
-        }
-        pr_info("[selinux_hook] statfs spoof ENABLED, UUID: %lx\n", g_fake_fsid);
+        // 🟢 FSID와 INO 둘 다 초기화 확인
+        if (g_fake_fsid == 0) g_fake_fsid = (unsigned long)get_random_u64(); 
+        if (g_fake_ino == 0)  g_fake_ino = (unsigned long)get_random_u64(); 
+        
+        pr_info("[selinux_hook] statfs spoof ENABLED, UUID: %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
         compat_copy_to_user(out_msg, "enabled\n", 8);
         return 0;
     } else if (kpm_strncmp(args, "disable", 7) == 0) {
@@ -4851,14 +4852,17 @@ g_fake_fsid = (unsigned long)get_random_u64();
         compat_copy_to_user(out_msg, "disabled\n", 9);
         return 0;
     } else if (kpm_strncmp(args, "set_uuid", 8) == 0) {
-g_fake_fsid = (unsigned long)get_random_u64();
-      
-          // 🟢 Inode 랜덤 생성 (이 줄을 추가하세요!)
-    g_fake_ino = (unsigned long)get_random_u64();
-      
+        g_fake_fsid = (unsigned long)get_random_u64();
+        g_fake_ino = (unsigned long)get_random_u64();
         g_statfs_spoof_enabled = true; 
-        pr_info("[selinux_hook] statfs fake UUID updated to %lx\n", g_fake_fsid);
+        pr_info("[selinux_hook] statfs fake UUID updated to %lx, INO: %lx\n", g_fake_fsid, g_fake_ino);
         compat_copy_to_user(out_msg, "uuid updated\n", 12);
+        return 0;
+    } else if (kpm_strncmp(args, "get_uuid", 8) == 0) {
+        // 🟢 추가: 자바 후킹이 KPM의 값을 읽어갈 수 있도록 함
+        char buf[64];
+        sprintf(buf, "%lx %lx\n", g_fake_fsid, g_fake_ino);
+        compat_copy_to_user(out_msg, buf, str_len_safe(buf) + 1);
         return 0;
     }
     // =========================================================
