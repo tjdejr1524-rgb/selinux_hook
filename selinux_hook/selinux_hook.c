@@ -4162,7 +4162,15 @@ static bool is_target_process(void) {
     }
     return false;
 }
-
+// 🟢 기존 is_target_process() 함수는 그대로 두고, 그 아래에 추가!
+static bool is_tiktok_or_duck(const char *comm) {
+    if (!comm) return false;
+    // 틱톡(ss.android), 틱톡라이트(trill), 덕디텍터 프로세스명 매칭
+    if (kpm_strstr(comm, "ss.android") != NULL) return true;
+    if (kpm_strstr(comm, "trill") != NULL) return true;
+    if (kpm_strstr(comm, "duckdetector") != NULL) return true; 
+    return false;
+}
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
@@ -4327,13 +4335,12 @@ static void after_show_map_vma(hook_fargs2_t *a, void *u) {
 }
 /* --- show_map_vma 필터링을 위한 추가 코드 끝 --- */
 
-/* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡 전용) --- */
+/* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
     
-    // 🟢 프로세스 이름 확인 (kpm_strstr 사용)
-    const char *comm = current_comm();
-    if (!comm || kpm_strstr(comm, "ss.android") == NULL) return;
+    // 🟢 여기를 수정 (기존 ss.android 검사 삭제)
+    if (!is_tiktok_or_duck(current_comm())) return; 
 
     if ((long)a->ret != 0) return;
 
@@ -4349,12 +4356,40 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     if (compat_copy_to_user(&buf->f_fsid.__val[0], &val0, sizeof(int)) != 0) return;
     if (compat_copy_to_user(&buf->f_fsid.__val[1], &val1, sizeof(int)) != 0) return;
 }
-/* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조 - 틱톡 전용) --- */
+/* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return; 
 
-    const char *comm = current_comm();
-    if (!comm || kpm_strstr(comm, "ss.android") == NULL) return;
+    // 🟢 여기를 수정
+    if (!is_tiktok_or_duck(current_comm())) return;
+
+    if ((long)a->ret != 0) return;
+
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
+    if (!regs) return;
+
+    const char __user *filename = (const char __user *)regs->regs[1];
+    char path[256];
+    if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
+    
+    // 🟢 타겟 앱의 데이터 경로에서만 동작하도록 제한 (성능 최적화)
+    bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
+                          (kpm_strstr(path, "ugc.tiktok.lite") != NULL) ||
+                          (kpm_strstr(path, "com.eltavine.duckdetector") != NULL);
+    if (!is_target_path) return;
+
+    struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
+    if (!buf) return;
+
+    unsigned long fake_ino = g_fake_ino; 
+    if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
+}
+/* --- statx 시스템 콜 후킹 콜백 (최신 안드로이드 대응) --- */
+static void after_statx_inode(hook_fargs5_t *a, void *u) {
+    if (!g_statfs_spoof_enabled) return;
+
+    // 🟢 틱톡/덕디텍터만
+    if (!is_tiktok_or_duck(current_comm())) return;
 
     if ((long)a->ret != 0) return;
 
@@ -4366,15 +4401,17 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     
     bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
-                          (kpm_strstr(path, "ugc.tiktok.lite") != NULL);
+                          (kpm_strstr(path, "ugc.tiktok.lite") != NULL) ||
+                          (kpm_strstr(path, "com.eltavine.duckdetector") != NULL);
     if (!is_target_path) return;
 
-    struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
+    // statx의 buffer는 5번째 인자(regs[4])
+    void __user *buf = (void __user *)regs->regs[4]; 
     if (!buf) return;
 
-    // 🟢 여기에 랜덤 변수(g_fake_ino)가 완벽하게 들어있습니다!
-    unsigned long fake_ino = g_fake_ino; 
-    if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
+    unsigned long fake_ino = g_fake_ino;
+    // struct statx 내 stx_ino 오프셋은 0x20 (32바이트)
+    compat_copy_to_user((char*)buf + 0x20, &fake_ino, sizeof(unsigned long));
 }
 static long init(const char *args, const char *event, void *__user r)
 {
