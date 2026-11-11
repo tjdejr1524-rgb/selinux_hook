@@ -4177,28 +4177,44 @@ static bool is_tiktok_or_duck(const char *comm) {
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
-if (!is_target_process()) return;
+    if (!is_target_process()) return;
+    
     const char __user *filename = (const char __user *)regs->regs[1];
     char buf[256];
-    if (compat_strncpy_from_user(buf, filename, sizeof(buf)) > 0) {
-        if (is_devpts_path(buf)) {
-            a->skip_origin = 1;
-            a->ret = (uint64_t)-ENOENT;
-        }
+    
+    // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(buf, filename, 255) != 0) return;
+        buf[255] = '\0';
+    } else {
+        if (compat_strncpy_from_user(buf, filename, sizeof(buf)) <= 0) return;
+    }
+    
+    if (is_devpts_path(buf)) {
+        a->skip_origin = 1;
+        a->ret = (uint64_t)-ENOENT;
     }
 }
 
 static void before_statx_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
-    if (!is_target_process()) return;  // 👈 이렇게 변경
+    if (!is_target_process()) return;
+    
     const char __user *filename = (const char __user *)regs->regs[1];
     char buf[256];
-    if (compat_strncpy_from_user(buf, filename, sizeof(buf)) > 0) {
-        if (is_devpts_path(buf)) {
-            a->skip_origin = 1;
-            a->ret = (uint64_t)-ENOENT;
-        }
+    
+    // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(buf, filename, 255) != 0) return;
+        buf[255] = '\0';
+    } else {
+        if (compat_strncpy_from_user(buf, filename, sizeof(buf)) <= 0) return;
+    }
+    
+    if (is_devpts_path(buf)) {
+        a->skip_origin = 1;
+        a->ret = (uint64_t)-ENOENT;
     }
 }
 /* --- Vector 로그 필터링을 위한 추가 코드 시작 --- */
