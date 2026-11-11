@@ -4168,10 +4168,10 @@ static bool is_target_process(void) {
 // 🟢 기존 is_target_process() 함수는 그대로 두고, 그 아래에 추가!
 static bool is_tiktok_or_duck(const char *comm) {
     if (!comm) return false;
-    // 틱톡(ss.android), 틱톡라이트(trill), 덕디텍터 프로세스명 매칭
     if (kpm_strstr(comm, "ss.android") != NULL) return true;
     if (kpm_strstr(comm, "trill") != NULL) return true;
-    if (kpm_strstr(comm, "duckdetector") != NULL) return true; 
+    // 🟢 comm은 15글자까지만 저장되므로 "eltavine" (9글자)로 검사
+    if (kpm_strstr(comm, "eltavine") != NULL) return true;  
     return false;
 }
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
