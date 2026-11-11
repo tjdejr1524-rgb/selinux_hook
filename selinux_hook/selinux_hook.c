@@ -4392,12 +4392,22 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     unsigned long fake_ino = g_fake_ino; 
     if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
 }
-/* --- openat 시스템 콜 후킹 콜백 (maps, smaps, pagemap 차단) --- */
 static void before_openat_maps(hook_fargs4_t *a, void *u) {
-    // 1. 일반 앱(UID 10000 이상)이거나 zygote 프로세스인 경우에만 작동
-    if (current_uid() < 10000 && kpm_strstr(current_comm(), "zygote") == NULL) {
+    const char *comm = current_comm();
+    if (!comm) return;
+
+    // 🟢 1. Zygisk/Vector 핵심 프로세스는 절대 차단하지 않음
+    if (kpm_strstr(comm, "zygote") != NULL ||
+        kpm_strstr(comm, "zygiskd") != NULL) {
         return;
     }
+
+    // 🟢 2. 오직 탐지 대상 앱(DuckDetector, TikTok)에만 적용
+    bool is_target = (kpm_strstr(comm, "detector") != NULL) ||
+                     (kpm_strstr(comm, "duckdetector") != NULL) ||
+                     (kpm_strstr(comm, "ss.android") != NULL) ||
+                     (kpm_strstr(comm, "tiktok") != NULL);
+    if (!is_target) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
@@ -4408,17 +4418,13 @@ static void before_openat_maps(hook_fargs4_t *a, void *u) {
     char path[256];
     if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
 
-    // 2. /proc/ 경로인지 확인 후, maps, smaps, pagemap 차단
     if (kpm_strstr(path, "/proc/") != NULL) {
         if (kpm_strstr(path, "/maps") != NULL || 
             kpm_strstr(path, "/smaps") != NULL ||
             kpm_strstr(path, "/pagemap") != NULL) {
             
             a->skip_origin = 1;
-            // 🟢 여기를 -EACCES(권한 없음)로 변경!
-            a->ret = (uint64_t)-EACCES; 
-            
-            // pr_info("[selinux_hook] BLOCK access: %s\n", path);
+            a->ret = (uint64_t)-ENOENT; 
         }
     }
 }
