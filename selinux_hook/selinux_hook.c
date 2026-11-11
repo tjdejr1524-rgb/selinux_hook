@@ -4397,34 +4397,33 @@ static void before_openat_maps(hook_fargs4_t *a, void *u) {
     if (!comm) return;
 
     // 🟢 1. Zygisk/Vector 핵심 프로세스는 절대 차단하지 않음
-    if (kpm_strstr(comm, "zygote") != NULL ||
-        kpm_strstr(comm, "zygiskd") != NULL) {
-        return;
-    }
+    if (kpm_strstr(comstatic void before_openat_maps(hook_fargs4_t *a, void *u) {
+    const char *comm = current_comm();
+    if (!comm) return;
 
-    // 🟢 2. 오직 탐지 대상 앱(DuckDetector, TikTok)에만 적용
-    bool is_target = (kpm_strstr(comm, "detector") != NULL) ||
-                     (kpm_strstr(comm, "duckdetector") != NULL) ||
-                     (kpm_strstr(comm, "ss.android") != NULL) ||
-                     (kpm_strstr(comm, "tiktok") != NULL);
-    if (!is_target) return;
+    // Zygisk/Vector 핵심 프로세스 및 시스템 보호
+    if (kpm_strstr(comm, "zygote") != NULL || kpm_strstr(comm, "zygiskd") != NULL) return;
+    if (current_uid() < 10000) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
-
     const char __user *filename = (const char __user *)regs->regs[1];
     if (!filename) return;
-
     char path[256];
     if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
 
     if (kpm_strstr(path, "/proc/") != NULL) {
-        if (kpm_strstr(path, "/maps") != NULL || 
-            kpm_strstr(path, "/smaps") != NULL ||
-            kpm_strstr(path, "/pagemap") != NULL) {
-            
-            a->skip_origin = 1;
-            a->ret = (uint64_t)-ENOENT; 
+        // 🟢 덕디텍터: pagemap만 차단 (maps/smaps는 앱 초기화를 위해 허용)
+        if (kpm_strstr(comm, "detector") != NULL) {
+            if (kpm_strstr(path, "/pagemap") != NULL) {
+                a->skip_origin = 1; a->ret = (uint64_t)-ENOENT;
+            }
+        }
+        // 🟢 틱톡: pagemap만 차단
+        else if (kpm_strstr(comm, "ss.android") != NULL || kpm_strstr(comm, "tiktok") != NULL) {
+            if (kpm_strstr(path, "/pagemap") != NULL) {
+                a->skip_origin = 1; a->ret = (uint64_t)-ENOENT;
+            }
         }
     }
 }
