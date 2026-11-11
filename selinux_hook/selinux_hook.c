@@ -4392,41 +4392,40 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     unsigned long fake_ino = g_fake_ino; 
     if (compat_copy_to_user(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
 }
+// 👇 여기에 넣으세요!
 static void before_openat_maps(hook_fargs4_t *a, void *u) {
     const char *comm = current_comm();
     if (!comm) return;
 
-    // 🟢 1. Zygisk/Vector 핵심 프로세스는 절대 차단하지 않음
-    if (kpm_strstr(comstatic void before_openat_maps(hook_fargs4_t *a, void *u) {
-    const char *comm = current_comm();
-    if (!comm) return;
+    if (kpm_strstr(comm, "zygote") != NULL ||
+        kpm_strstr(comm, "zygiskd") != NULL) {
+        return;
+    }
 
-    // Zygisk/Vector 핵심 프로세스 및 시스템 보호
-    if (kpm_strstr(comm, "zygote") != NULL || kpm_strstr(comm, "zygiskd") != NULL) return;
-    if (current_uid() < 10000) return;
+    bool is_target = (kpm_strstr(comm, "detector") != NULL) ||
+                     (kpm_strstr(comm, "duckdetector") != NULL) ||
+                     (kpm_strstr(comm, "ss.android") != NULL) ||
+                     (kpm_strstr(comm, "tiktok") != NULL);
+    if (!is_target) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
+
     const char __user *filename = (const char __user *)regs->regs[1];
     if (!filename) return;
+
     char path[256];
     if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
 
     if (kpm_strstr(path, "/proc/") != NULL) {
-        // 🟢 덕디텍터: pagemap만 차단 (maps/smaps는 앱 초기화를 위해 허용)
-        if (kpm_strstr(comm, "detector") != NULL) {
-            if (kpm_strstr(path, "/pagemap") != NULL) {
-                a->skip_origin = 1; a->ret = (uint64_t)-ENOENT;
-            }
-        }
-        // 🟢 틱톡: pagemap만 차단
-        else if (kpm_strstr(comm, "ss.android") != NULL || kpm_strstr(comm, "tiktok") != NULL) {
-            if (kpm_strstr(path, "/pagemap") != NULL) {
-                a->skip_origin = 1; a->ret = (uint64_t)-ENOENT;
-            }
+        if (kpm_strstr(path, "/pagemap") != NULL) {
+            a->skip_origin = 1;
+            a->ret = (uint64_t)-ENOENT; 
         }
     }
 }
+
+// 👇 init 함수 시작
 static long init(const char *args, const char *event, void *__user r)
 {
     unsigned long addr;
