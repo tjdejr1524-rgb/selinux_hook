@@ -4169,21 +4169,22 @@ static bool is_target_process(void) {
 static bool is_tiktok_or_duck(const char *comm) {
     if (!comm) return false;
     
-    // 틱톡 전체
+    // 틱톡 (메인+자식) 및 라이트
     if (kpm_strstr(comm, "ss.android") != NULL) return true;
     if (kpm_strstr(comm, "trill") != NULL) return true;
+    if (kpm_strstr(comm, "musically") != NULL) return true; 
     
-    // 덕디텍터 메인/자식
+    // 덕디텍터 메인 및 자식
     if (kpm_strstr(comm, "eltavine") != NULL) return true;
     if (kpm_strstr(comm, "detector_zygote") != NULL) return true;
     
-    // 👇 격리 프로세스만 정확히 (zygote64는 제외!)
-    if (kpm_strstr(comm, "webview_zygote") != NULL) return true;
+    // 시스템 격리 프로세스 (맵 스캔 주범)
     if (kpm_strstr(comm, "app_zygote") != NULL) return true;
+    if (kpm_strstr(comm, "webview_zygote") != NULL) return true;
     if (kpm_strstr(comm, "usap64") != NULL) return true;
     if (kpm_strstr(comm, "usap32") != NULL) return true;
     
-    return false;  // zygote64, zygote32는 여기서 false
+    return false;
 }
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
@@ -4541,6 +4542,41 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
     unsigned long fake_ino = g_fake_ino;
     if (copy_to_user_nofault_fn) {
         copy_to_user_nofault_fn((char*)buf + 0x20, &fake_ino, sizeof(unsigned long));
+    }
+}
+/* ===== [추가] seq_read 후킹 (maps 파일 내용 가로채기) ===== */
+static void after_seq_read(hook_fargs4_t *a, void *u) {
+    long ret = (long)a->ret;
+    if (ret <= 0) return;
+
+    // 대상 앱이 아니면 무시
+    if (!is_tiktok_or_duck(current_comm())) return;
+
+    char __user *buf = (char __user *)a->arg1;
+    if (!buf) return;
+
+    char kbuf[4096]; // seq_read는 1페이지(4KB) 단위로 읽음
+    if (ret > sizeof(kbuf) - 1) ret = sizeof(kbuf) - 1;
+
+    // 유저 버퍼에서 읽어오기
+    if (compat_strncpy_from_user(kbuf, buf, ret) <= 0) return;
+    kbuf[ret] = '\0';
+
+    bool modified = false;
+    char *p;
+
+    // 글자 수를 유지하며 문자열 치환 (qemu->none, goldfish->none_xxx, ranchu->none_x)
+    while ((p = strstr(kbuf, "qemu")) != NULL) { memcpy(p, "none", 4); modified = true; }
+    while ((p = strstr(kbuf, "goldfish")) != NULL) { memcpy(p, "none_xxx", 8); modified = true; }
+    while ((p = strstr(kbuf, "ranchu")) != NULL) { memcpy(p, "none_x", 6); modified = true; }
+
+    if (modified) {
+        // 0이 반환되면 성공입니다.
+        if (compat_copy_to_user(buf, kbuf, ret) == 0) {
+            pr_info("[selinux_hook] HIDE maps -> qemu traces hidden\n");
+        } else {
+            pr_info("[selinux_hook] Failed to copy modified maps buffer\n");
+        }
     }
 }
 static long init(const char *args, const char *event, void *__user r)
@@ -4912,14 +4948,14 @@ static long init(const char *args, const char *event, void *__user r)
     }
     /* -------------------------------------------------- */
     
-    /* --- show_map_vma 후킹 등록 (maps 필터링) --- */
-    addr = (unsigned long)lookup_name_optional_suffix("show_map_vma");
+ /* ===== 👇 새로 추가할 seq_read 후킹 코드 ===== */
+    addr = (unsigned long)lookup_name_optional_suffix("seq_read");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
-        pr_info("[selinux_hook] hook show_map_vma @ %lx for maps filtering\n", addr);
-        hook_wrap((void *)addr, 2, before_show_map_vma, after_show_map_vma, NULL);
+        pr_info("[selinux_hook] hook seq_read @ %lx for maps filtering\n", addr);
+        hook_wrap((void *)addr, 4, NULL, after_seq_read, NULL);
     } else {
-        pr_warn("[selinux_hook] cannot find show_map_vma\n");
+        pr_warn("[selinux_hook] cannot find seq_read\n");
     }
     addr = (unsigned long)lookup_name_optional_suffix("sel_read_enforce");
     if (addr) {
