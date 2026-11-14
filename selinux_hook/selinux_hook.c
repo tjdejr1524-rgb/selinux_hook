@@ -4916,6 +4916,25 @@ static long init(const char *args, const char *event, void *__user r)
     }
     return 0;
 }
+/* ===== [추가] qemu 속성 숨기기 위한 콜백 함수 ===== */
+static void before_system_property_find(hook_fargs1_t *a, void *u) {
+    const char *name = (const char *)a->arg0;
+    if (!name) return;
+
+    char buf[128];
+    // 유저 공간의 문자열(속성 이름)을 커널로 안전하게 가져옴
+    if (compat_strncpy_from_user(buf, name, sizeof(buf) - 1) > 0) {
+        buf[sizeof(buf) - 1] = '\0';
+        // qemu.sf.lcd_density 를 찾으려고 하면
+        if (strstr(buf, "qemu.sf.lcd_density") != NULL) {
+            a->skip_origin = 1; // 원본 함수 실행 건너뜀
+            a->ret = 0;         // NULL 반환 (속성이 없는 것처럼 위조)
+            pr_info("[selinux_hook] Blocked property query: %s\n", buf);
+        }
+    }
+}
+
+/* (기존에 있던 static long init 함수가 여기서 시작됩니다) */
 static long exit_(void *__user r)
 {
     WRITE_ONCE(g_write_op_install_deferred, false);
@@ -5018,7 +5037,18 @@ static long control(const char* args, char* __user out_msg, int outlen) {
             return 0;
         }
     }
+    /* ===== [추가] qemu 속성 조회 차단 후킹 등록 ===== */
+    addr = (unsigned long)lookup_name_optional_suffix("__system_property_find");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook __system_property_find @ %lx for hiding qemu props\n", addr);
+        hook_wrap((void *)addr, 1, before_system_property_find, NULL, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find __system_property_find\n");
+    }
 
+    return 0; // 👈 기존에 있던 return 0; 바로 위에 위 코드가 들어갑니다.
+}
     return 0;
 }
 KPM_INIT(init);
