@@ -4321,7 +4321,10 @@ static bool is_hidden_module(struct seq_file *m) {
         "frida", 
         "gum-js-loop", 
         "xposed", 
-        "qemu_sf_lcd_density_prop",  // 👈 이곳(배열 안)에 들어가야 합니다.
+        "qemu_sf_lcd_density_prop",  
+        "qemu",        // 👈 추가! (에뮬레이터 관련 모든 경로 차단)
+        "goldfish",    // 👈 추가! (안드로이드 에뮬레이터 드라이버 이름)
+        "ranchu",      // 👈 추가! (최신 안드로이드 스튜디오 에뮬레이터 코드명)
         NULL
     };
     
