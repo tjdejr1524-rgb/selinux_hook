@@ -4338,7 +4338,50 @@ static void before_show_map_vma(hook_fargs2_t *a, void *u) {
         a->local.data0 = m->count; 
     }
 }
+/* --- Fake Enforcing: /sys/fs/selinux/enforce 읽기 후킹 콜백 --- */
+static void before_sel_read_enforce(hook_fargs4_t *a, void *u)
+{
+    // 시스템 프로세스(uid < 10000)는 원본 값을 그대로 보게 함
+    if (current_uid() < 10000) return;
 
+    char __user *buf = (char __user *)a->arg1; // arg1: buf
+    size_t count = (size_t)a->arg2;            // arg2: count
+    loff_t *ppos = (loff_t *)a->arg3;          // arg3: ppos
+    loff_t pos = 0;
+
+    if (ppos) {
+        if (copy_from_kernel_nofault_fn) {
+            if (copy_from_kernel_nofault_fn(&pos, ppos, sizeof(pos)) != 0) return;
+        } else {
+            pos = *ppos;
+        }
+    }
+
+    // 이미 다 읽었으면 EOF 반환
+    if (pos >= 2) {
+        a->skip_origin = 1;
+        a->ret = 0;
+        return;
+    }
+
+    if (count > 0 && buf) {
+        size_t to_copy = count < 2 ? count : 2;
+        static const char fake_enforce[] = "1\n";
+        
+        if (copy_to_user_nofault_fn) {
+            if (copy_to_user_nofault_fn(buf, fake_enforce + pos, to_copy) != 0) return;
+        } else {
+            compat_copy_to_user(buf, fake_enforce + pos, to_copy);
+        }
+
+        if (ppos) {
+            *(loff_t *)ppos = pos + to_copy; // 파일 포인터 업데이트
+        }
+        
+        a->skip_origin = 1;
+        a->ret = to_copy; // "1\n"을 읽은 길이(2) 반환
+    }
+}
 static void after_show_map_vma(hook_fargs2_t *a, void *u) {
     // 🟢 UID 체크 + 타겟 앱(틱톡/덕디텍터) 체크 추가
     if (current_uid() < 10000) return;
@@ -4854,7 +4897,14 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find show_map_vma\n");
     }
-    
+    addr = (unsigned long)lookup_name_optional_suffix("sel_read_enforce");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook sel_read_enforce @ %lx for fake enforcing\n", addr);
+        hook_wrap((void *)addr, 4, before_sel_read_enforce, NULL, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find sel_read_enforce\n");
+    }
     return 0;
 }
 static long exit_(void *__user r)
