@@ -4316,6 +4316,8 @@ static bool is_hidden_module(struct seq_file *m) {
     
     static const char *keywords[] = {
         "bytehook", "trampoline", "libart.so", "frida", "gum-js-loop", "xposed", NULL
+          "qemu_sf_lcd_density_prop",  // 👈 이 줄을 추가하세요!
+
     };
     
     for (int i = 0; keywords[i] != NULL; ++i) {
