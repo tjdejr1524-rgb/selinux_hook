@@ -4544,7 +4544,7 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
         copy_to_user_nofault_fn((char*)buf + 0x20, &fake_ino, sizeof(unsigned long));
     }
 }
-/* ===== [추가] seq_read 후킹 (maps 파일 내용 가로채기) ===== */
+/* ===== [수정] seq_read 후킹 (maps 파일 내용 가로채기) ===== */
 static void after_seq_read(hook_fargs4_t *a, void *u) {
     long ret = (long)a->ret;
     if (ret <= 0) return;
@@ -4555,23 +4555,31 @@ static void after_seq_read(hook_fargs4_t *a, void *u) {
     char __user *buf = (char __user *)a->arg1;
     if (!buf) return;
 
-    char kbuf[4096]; // seq_read는 1페이지(4KB) 단위로 읽음
+    char kbuf[4096];
     if (ret > sizeof(kbuf) - 1) ret = sizeof(kbuf) - 1;
 
-    // 유저 버퍼에서 읽어오기
+    // 유저 버퍼에서 커널 버퍼로 복사
     if (compat_strncpy_from_user(kbuf, buf, ret) <= 0) return;
     kbuf[ret] = '\0';
 
     bool modified = false;
     char *p;
 
-    // 글자 수를 유지하며 문자열 치환 (qemu->none, goldfish->none_xxx, ranchu->none_x)
-    while ((p = strstr(kbuf, "qemu")) != NULL) { memcpy(p, "none", 4); modified = true; }
-    while ((p = strstr(kbuf, "goldfish")) != NULL) { memcpy(p, "none_xxx", 8); modified = true; }
-    while ((p = strstr(kbuf, "ranchu")) != NULL) { memcpy(p, "none_x", 6); modified = true; }
+    // strstr 대신 kpm_strstr 사용, memcpy 대신 copy_bytes 사용
+    while ((p = kpm_strstr(kbuf, "qemu")) != NULL) { 
+        copy_bytes(p, "none", 4); 
+        modified = true; 
+    }
+    while ((p = kpm_strstr(kbuf, "goldfish")) != NULL) { 
+        copy_bytes(p, "none_xxx", 8); 
+        modified = true; 
+    }
+    while ((p = kpm_strstr(kbuf, "ranchu")) != NULL) { 
+        copy_bytes(p, "none_x", 6); 
+        modified = true; 
+    }
 
     if (modified) {
-        // 0이 반환되면 성공입니다.
         if (compat_copy_to_user(buf, kbuf, ret) == 0) {
             pr_info("[selinux_hook] HIDE maps -> qemu traces hidden\n");
         } else {
