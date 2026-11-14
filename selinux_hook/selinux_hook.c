@@ -4314,19 +4314,23 @@ static char *kpm_strstr(const char *haystack, const char *needle) {
 static bool is_hidden_module(struct seq_file *m) {
     if (!m || !m->buf || m->count == 0) return false;
     
-    static const char *keywords[] = {
-        "bytehook", 
-        "trampoline", 
-        "libart.so", 
-        "frida", 
-        "gum-js-loop", 
-        "xposed", 
-        "qemu_sf_lcd_density_prop",  
-        "qemu",        // 👈 추가! (에뮬레이터 관련 모든 경로 차단)
-        "goldfish",    // 👈 추가! (안드로이드 에뮬레이터 드라이버 이름)
-        "ranchu",      // 👈 추가! (최신 안드로이드 스튜디오 에뮬레이터 코드명)
-        NULL
-    };
+static const char *keywords[] = {
+    "bytehook", 
+    "trampoline", 
+    "libart.so", 
+    "frida", 
+    "gum-js-loop", 
+    "xposed", 
+    "qemu_sf_lcd_density_prop",
+    "qemu",
+    "goldfish",
+    "ranchu",
+    "com.android.virt",     // 👈 AVF APEX 경로 차단
+    "VirtualizationService", // 👈 가상화 서비스 이름 차단
+    "crosvm",               // 👈 AVF의 VM 관리자 차단
+    "virtmgr",              // 👈 가상화 관리자 차단
+    NULL
+};
     
     for (int i = 0; keywords[i] != NULL; ++i) {
         size_t kw_len = str_len_safe(keywords[i]);
