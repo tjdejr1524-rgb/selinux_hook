@@ -4168,13 +4168,22 @@ static bool is_target_process(void) {
 // 🟢 기존 is_target_process() 함수는 그대로 두고, 그 아래에 추가!
 static bool is_tiktok_or_duck(const char *comm) {
     if (!comm) return false;
+    
+    // 틱톡 전체
     if (kpm_strstr(comm, "ss.android") != NULL) return true;
     if (kpm_strstr(comm, "trill") != NULL) return true;
-    // 🟢 comm은 15글자까지만 저장되므로 "eltavine" (9글자)로 검사
-    if (kpm_strstr(comm, "eltavine") != NULL) return true;  
-      if (kpm_strstr(comm, "detector_zygote") != NULL) return true;
-    if (kpm_strstr(comm, "app_zygote") != NULL) return true; 
-    return false;
+    
+    // 덕디텍터 메인/자식
+    if (kpm_strstr(comm, "eltavine") != NULL) return true;
+    if (kpm_strstr(comm, "detector_zygote") != NULL) return true;
+    
+    // 👇 격리 프로세스만 정확히 (zygote64는 제외!)
+    if (kpm_strstr(comm, "webview_zygote") != NULL) return true;
+    if (kpm_strstr(comm, "app_zygote") != NULL) return true;
+    if (kpm_strstr(comm, "usap64") != NULL) return true;
+    if (kpm_strstr(comm, "usap32") != NULL) return true;
+    
+    return false;  // zygote64, zygote32는 여기서 false
 }
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
