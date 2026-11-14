@@ -4172,6 +4172,8 @@ static bool is_tiktok_or_duck(const char *comm) {
     if (kpm_strstr(comm, "trill") != NULL) return true;
     // 🟢 comm은 15글자까지만 저장되므로 "eltavine" (9글자)로 검사
     if (kpm_strstr(comm, "eltavine") != NULL) return true;  
+      if (kpm_strstr(comm, "detector_zygote") != NULL) return true;
+    if (kpm_strstr(comm, "app_zygote") != NULL) return true; 
     return false;
 }
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
