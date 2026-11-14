@@ -4315,13 +4315,17 @@ static bool is_hidden_module(struct seq_file *m) {
     if (!m || !m->buf || m->count == 0) return false;
     
     static const char *keywords[] = {
-        "bytehook", "trampoline", "libart.so", "frida", "gum-js-loop", "xposed", NULL
-          "qemu_sf_lcd_density_prop",  // 👈 이 줄을 추가하세요!
-
+        "bytehook", 
+        "trampoline", 
+        "libart.so", 
+        "frida", 
+        "gum-js-loop", 
+        "xposed", 
+        "qemu_sf_lcd_density_prop",  // 👈 이곳(배열 안)에 들어가야 합니다.
+        NULL
     };
     
     for (int i = 0; keywords[i] != NULL; ++i) {
-        // 👇 strlen 대신 str_len_safe 사용!
         size_t kw_len = str_len_safe(keywords[i]);
         if (memmem_local(m->buf, m->count, keywords[i], kw_len))
             return true;
