@@ -4214,8 +4214,7 @@ static int read_user_path(const char __user *up, char *buf, int buflen) {
     buf[buflen - 1] = '\0';
     return 0;
 }
-if (read_user_path(filename, path, sizeof(path)) != 0)
-    return;
+
 
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
