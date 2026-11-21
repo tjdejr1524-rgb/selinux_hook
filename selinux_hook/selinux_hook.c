@@ -1,4 +1,4 @@
-/*
+/*/*
  * Audit and filter SELinux access queries that probe Magisk contexts.
  *
  * The safe point for transaction queries is the selinuxfs write_op table,
@@ -72,7 +72,7 @@ KPM_DESCRIPTION("Audit and reject Magisk /sys/fs/selinux/access probes");
 
 #define selinux_hook_dbg(fmt, ...) do {} while (0)
 
-static void *g_funcs[64]; 
+static void *g_funcs[32]; 
 static int g_hooks;
 struct file;
 typedef ssize_t (*sel_write_op_fn)(struct file *file, char *buf, size_t size);
@@ -4186,36 +4186,6 @@ static bool is_tiktok_or_duck(const char *comm) {
     
     return false;
 }
-
-static bool is_storage_path(const char *path) {
-    if (!path || !path[0]) return false;
-    return kpm_strstr(path, "/storage/") != NULL ||
-           kpm_strstr(path, "/mnt/user/") != NULL ||
-           kpm_strstr(path, "/mnt/media_rw/") != NULL;
-}
-
-/* 앱: 틱톡/덕디텍터
- * system_server: 스토리지 경로만 */
-static bool should_spoof_fsid_path(const char *path) {
-    uid_t uid = current_uid();
-    if (uid >= 10000)
-        return is_tiktok_or_duck(current_comm());
-    if (uid == 1000 && is_storage_path(path))
-        return true;
-    return false;
-}
-
-static int read_user_path(const char __user *up, char *buf, int buflen) {
-    int n;
-    if (!up || !buf || buflen < 2) return -1;
-    buf[0] = '\0';
-    n = compat_strncpy_from_user(buf, up, buflen - 1);
-    if (n <= 0) return -1;
-    buf[buflen - 1] = '\0';
-    return 0;
-}
-
-
 static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
@@ -4225,8 +4195,12 @@ static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     char buf[256];
     
     // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
-if (read_user_path(filename, buf, sizeof(buf)) != 0)
-    return;
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(buf, filename, 255) != 0) return;
+        buf[255] = '\0';
+    } else {
+        if (compat_strncpy_from_user(buf, filename, sizeof(buf)) <= 0) return;
+    }
     
     if (is_devpts_path(buf)) {
         a->skip_origin = 1;
@@ -4243,8 +4217,12 @@ static void before_statx_devpts(hook_fargs1_t *a, void *u) {
     char buf[256];
     
     // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
-if (read_user_path(filename, buf, sizeof(buf)) != 0)
-    return;
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(buf, filename, 255) != 0) return;
+        buf[255] = '\0';
+    } else {
+        if (compat_strncpy_from_user(buf, filename, sizeof(buf)) <= 0) return;
+    }
     
     if (is_devpts_path(buf)) {
         a->skip_origin = 1;
@@ -4444,53 +4422,30 @@ static void after_show_map_vma(hook_fargs2_t *a, void *u) {
 }
 /* --- show_map_vma 필터링을 위한 추가 코드 끝 --- */
 
+/* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
-    struct pt_regs *regs;
-    char path[256];
-    struct k_statfs __user *buf;
-    int val0, val1;
-
     if (!g_statfs_spoof_enabled) return;
+    
+    // 🟢 추가: 시스템 프로세스는 즉시 리턴 (렉 방지)
+    if (current_uid() < 10000) return; 
+    
+    if (!is_tiktok_or_duck(current_comm())) return; 
+
     if ((long)a->ret != 0) return;
 
-    regs = (struct pt_regs *)a->arg0;
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
     if (!regs) return;
 
-    path[0] = '\0';
-    if (regs->regs[1])
-        read_user_path((const char __user *)regs->regs[1], path, sizeof(path));
+    struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[2];
+    if (!buf) return;
 
-    if (!should_spoof_fsid_path(path)) return;
+    int val0 = (int)(g_fake_fsid & 0xFFFFFFFF);
+    int val1 = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
 
-    buf = (struct k_statfs __user *)regs->regs[2];
-    if (!buf || !copy_to_user_nofault_fn) return;
-
-    val0 = (int)(g_fake_fsid & 0xFFFFFFFF);
-    val1 = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
-    copy_to_user_nofault_fn(&buf->f_fsid.__val[0], &val0, sizeof(int));
-    copy_to_user_nofault_fn(&buf->f_fsid.__val[1], &val1, sizeof(int));
-}
-/* fd 기반. 경로를 모르므로 앱만 적용 */
-static void after_fstatfs(hook_fargs3_t *a, void *u) {
-    struct pt_regs *regs;
-    struct k_statfs __user *buf;
-    int val0, val1;
-
-    if (!g_statfs_spoof_enabled) return;
-    if ((long)a->ret != 0) return;
-    if (current_uid() < 10000) return;
-    if (!is_tiktok_or_duck(current_comm())) return;
-
-    regs = (struct pt_regs *)a->arg0;
-    if (!regs) return;
-
-    buf = (struct k_statfs __user *)regs->regs[2];
-    if (!buf || !copy_to_user_nofault_fn) return;
-
-    val0 = (int)(g_fake_fsid & 0xFFFFFFFF);
-    val1 = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
-    copy_to_user_nofault_fn(&buf->f_fsid.__val[0], &val0, sizeof(int));
-    copy_to_user_nofault_fn(&buf->f_fsid.__val[1], &val1, sizeof(int));
+   if (copy_to_user_nofault_fn) {
+        if (copy_to_user_nofault_fn(&buf->f_fsid.__val[0], &val0, sizeof(int)) != 0) return;
+        if (copy_to_user_nofault_fn(&buf->f_fsid.__val[1], &val1, sizeof(int)) != 0) return;
+    }
 }
 /* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
@@ -4506,8 +4461,12 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     char path[256];
     
     // (경로 읽기 - 기존과 동일)
-if (read_user_path(filename, path, sizeof(path)) != 0)
-    return;
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(path, filename, 255) != 0) return;
+        path[255] = '\0';
+    } else {
+        if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
+    }
 
     // 🟢 여기서부터 추가! (/dev/pts UID/GID 위조)
     if (is_devpts_path(path)) {
@@ -4550,8 +4509,12 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
     char path[256];
     
     // (경로 읽기 - 기존과 동일)
-if (read_user_path(filename, path, sizeof(path)) != 0)
-    return;
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(path, filename, 255) != 0) return;
+        path[255] = '\0';
+    } else {
+        if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
+    }
 
     // 🟢 여기서부터 추가! (/dev/pts UID/GID 위조)
     if (is_devpts_path(path)) {
@@ -4979,16 +4942,7 @@ static long init(const char *args, const char *event, void *__user r)
         pr_warn("[selinux_hook] cannot find __arm64_sys_statfs\n");
     }
     /* ---------------------------------- */
-addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_fstatfs");
-if (!addr)
-    addr = (unsigned long)lookup_name_optional_suffix("__se_sys_fstatfs");
-if (addr) {
-    g_funcs[g_hooks++] = (void *)addr;
-    pr_info("[selinux_hook] hook fstatfs @ %lx\n", addr);
-    hook_wrap((void *)addr, 1, NULL, after_fstatfs, NULL);
-} else {
-    pr_warn("[selinux_hook] cannot find __arm64_sys_fstatfs\n");
-}
+
     /* --- newfstatat 시스템 콜 후킹 등록 (devpts + Inode 통합) --- */
     addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstatat");
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_newfstatat");
