@@ -4177,7 +4177,8 @@ static bool is_tiktok_or_duck(const char *comm) {
     // 덕디텍터 메인 및 자식
     if (kpm_strstr(comm, "eltavine") != NULL) return true;
     if (kpm_strstr(comm, "detector_zygote") != NULL) return true;
-    
+    if (kpm_strstr(comm, "facebook") != NULL) return true;
+
     // 시스템 격리 프로세스 (맵 스캔 주범)
     if (kpm_strstr(comm, "app_zygote") != NULL) return true;
     if (kpm_strstr(comm, "webview_zygote") != NULL) return true;
