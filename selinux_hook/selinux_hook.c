@@ -4995,7 +4995,7 @@ static long init(const char *args, const char *event, void *__user r)
         pr_warn("[selinux_hook] cannot find __arm64_sys_fstatfs\n");
     }
     /* --- fstat 등록 (fd 기반 우회 차단) --- */
-    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_fstat");
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstat");  // arm64 실제 심볼
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_fstat");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
