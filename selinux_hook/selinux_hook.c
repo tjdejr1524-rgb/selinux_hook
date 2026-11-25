@@ -24,7 +24,7 @@
 #include <hook.h>
 #include <kpmodule.h>
 #include <kputils.h>
-/* --- statfs UUID 스푸핑을 위한 전역 변수 --- */
+/* --- statfs UUID ?ㅽ뫖?묒쓣 ?꾪븳 ?꾩뿭 蹂??--- */
 static bool g_statfs_spoof_enabled = false; 
 static unsigned long g_fake_fsid = 0; 
 static unsigned long g_fake_ino = 0; 
@@ -711,7 +711,7 @@ static void fill_clean_status_bytes(unsigned char *status)
     zero_bytes(status, SELINUX_STATUS_SIZE);
     put_u32_le(status + 0,  1);
     put_u32_le(status + 4,  seq);
-    put_u32_le(status + 8,  1);    /* enforcing — always 1 */
+    put_u32_le(status + 8,  1);    /* enforcing ??always 1 */
     put_u32_le(status + 12, pload);
     put_u32_le(status + 16, 1);
 }
@@ -782,10 +782,9 @@ static bool use_legacy_clean_blob_query(void)
 }
 
 /*
- * 4.9-only gate / 仅 4.9 开关：
+ * 4.9-only gate / 餓?4.9 凉?놂폏
  * All Polaris 4.9 ABI branches should enter through this helper so 4.14/5.x/6.x
- * keep their existing paths. 所有 4.9 专用逻辑都集中走这里，避免误伤其他内核。
- */
+ * keep their existing paths. ???4.9 訝볡뵪?삭풌?썽썓訝?뎔瓦숅뇤竊뚪겳?띹?鴉ㅵ끀餓뽩냵?멥? */
 static bool selinux_49_compat_path(void)
 {
     return kver >= SELINUX_49_MIN && kver < SELINUX_49_MAX;
@@ -813,11 +812,9 @@ static bool clean_policydb_redirect_supported(void)
      *   - security/selinux/selinuxfs.c
      *       sel_write_access(), sel_write_context(), write_op[]
      *
-     * 这里的 4.14 适配不是单纯按 kver 猜 ABI，而是用上述 cepheus/sm8150
-     * 4.14 源码确认 SELinux helper 的真实签名。只要运行时能解析到
-     * selinux_state，就认为它符合这组 4.14 stateful SELinux 布局；否则
-     * 回退到更保守的 legacy 路径，避免把 policydb 参数强套到未知布局上。
-     *
+     * 瓦숅뇤??4.14 ?귡뀓訝띷삸?뺟변??kver ??ABI竊뚩뚧삸?ⓧ툓瓦?cepheus/sm8150
+     * 4.14 繹먪쟻簾?? SELinux helper ?꾤쐿若욅??띲귛룵誤곮퓧烏뚧뿶?썼㎗?먨댆
+     * selinux_state竊뚦갚溫ㅴ맏若껆Е?덅퓳瀯?4.14 stateful SELinux 躍껃?竊쎾맔??     * ?욇?경쎍岳앭츍??legacy 瓮?푶竊뚪겳?띷뒍 policydb ?귝빊凉뷴쪞?경쑋?ε툋掠訝듽?     *
      * The Xiaomi sm8150/cepheus 4.14 lineage keeps selinux_state and also uses
      * the policydb-argument context_struct_compute_av() signature.  Therefore
      * selinux_state is the runtime confidence signal for using the 4.14
@@ -832,7 +829,7 @@ static bool current_is_policy_manager(void)
     const char *comm = current_comm();
     uid_t uid = current_uid();
 
-    /* 4.9 only / 仅 4.9：APatch UI 用 UID 放行，避免误拦管理器自身查询。 */
+    /* 4.9 only / 餓?4.9竊숤Patch UI ??UID ?얕죱竊뚪겳?띹?????녶솳?よ벴?θ???*/
     if (selinux_49_compat_path()) {
         uid_t apatch_uid = READ_ONCE(g_apatch_manager_uid);
         if (apatch_uid != (uid_t)-1 && uid == apatch_uid)
@@ -840,17 +837,11 @@ static bool current_is_policy_manager(void)
     }
 
     /*
-     * comm 匹配需额外要求 uid<10000。
-     *
-     * 仅凭 comm == "apd"/"magiskpolicy"/"truncate" 放行到 LIVE 分支，可被
-     * 普通 app 用 prctl(PR_SET_NAME) 仿冒，使 access/context 查询返回真实
-     * AV，与走 clean 分支的普通查询形成差分，反证 APatch 存在。
-     *
-     * comm 匹配仍保留（保障 magiskpolicy/apd 在策略加载流程内外的 access
-     * 探测仍走 LIVE，避免触发 snapshot_clean_policy → security_read 在加载
-     * 中递归读取导致 bootloop），但额外要求 uid<10000：真管理器是 root，
-     * 普通 app（uid>=10000）即使改 comm 也进不了 bypass 分支，差分消失。
-     */
+     * comm ?백뀓?窯앭쨼誤곫콆 uid<10000??     *
+     * 餓끻눑 comm == "apd"/"magiskpolicy"/"truncate" ?얕죱??LIVE ?녷뵱竊뚦룾熬?     * ???app ??prctl(PR_SET_NAME) 餓욕넂竊뚥슴 access/context ?θ?瓦붷썮?잌츩
+     * AV竊뚥툗壅?clean ?녷뵱?꾣솹?싨윥瑥℡숱?먨량?놅펽?띹칮 APatch 耶섇쑉??     *
+     * comm ?백뀓餓띴퓷?숋펷岳앶슌 magiskpolicy/apd ?①춺?ε뒥饔썸탛葉뗥냵鸚뽫쉪 access
+     * ?€탩餓띹뎔 LIVE竊뚪겳?띹㏄??snapshot_clean_policy ??security_read ?ⓨ뒥饔?     * 訝?믣퐩瑥삣룚野쇠눜 bootloop竊됵펽鵝녽쥫鸚뽬쫨黎?uid<10000竊싩쐿嶸←릤?ⓩ삸 root竊?     * ???app竊늱id>=10000竊됧뜵鵝욘뵻 comm 阿잒퓵訝띴틙 bypass ?녷뵱竊뚦량?녷텋鸚긱?     */
     if (uid >= 10000)
         return false;
 
@@ -890,10 +881,9 @@ static void log_bypass_once(const char *node, uid_t uid, const char *query)
 static bool selinux_compat_call_needed(void)
 {
     /*
-     * 4.14 参考源码里的 security_read_policy() / security_context_to_sid()
-     * 都需要 struct selinux_state * 作为第一个参数。这里用 selinux_state
-     * 作为运行时信号，避免在没有 stateful ABI 的旧内核上误传参数。
-     *
+     * 4.14 ?귟껅틦?곲뇤??security_read_policy() / security_context_to_sid()
+     * ?썽?誤?struct selinux_state * 鵝쒍맏寧т?訝ゅ뢿?겹귟퓳?뚨뵪 selinux_state
+     * 鵝쒍맏瓦먫죱?뜸에?뤄펽?욕뀓?ⓩ깹??stateful ABI ?꾣뿧?끾졇訝딂?鴉졾뢿?겹?     *
      * security_read_policy() and security_context_to_sid() are stateful on the
      * 4.14 sources listed above.  Keep the state argument through the Android
      * common stateful era, and stop before the newer 6.4+ LSM refactors where
@@ -910,10 +900,9 @@ static bool selinux_state_arg_required(void)
 static bool policydb_offset_fallback_allowed(void)
 {
     /*
-     * policydb 偏移不能靠 sizeof(void *) 盲猜。只有确认当前内核像已审计的
-     * 4.14 sm8150/cepheus stateful 布局，或者已经是非 legacy 的新内核时，
-     * 才允许这个兜底；否则宁可跳过高风险路径。
-     *
+     * policydb ?뤹㎉訝띹꺗??sizeof(void *) ?꿰뙗?귛룵?됬‘溫ㅵ퐪?띶냵?멨깗藥꿨?溫←쉪
+     * 4.14 sm8150/cepheus stateful 躍껃?竊뚧닑?끻럴瀯뤸삸??legacy ?꾣뼭?끾졇?띰펽
+     * ?띶뀅溫멱퓳訝ゅ뀥佯뺧폑??닕若곩룾瓮녘퓝遙섌즼?⑵러孃꾠?     *
      * Do not guess policydb layout on pre-baseline legacy kernels.  The old
      * sizeof(void *) fallback is only acceptable once the runtime looks like
      * the audited 4.14 sm8150/cepheus stateful SELinux layout or a newer
@@ -945,11 +934,9 @@ static bool security_setprocattr_has_lsm_arg(void)
 static bool security_load_policy_has_load_state(void)
 {
     /*
-     * 4.14 的 security_load_policy() 会直接提交 live policy，没有新版
-     * load_state/cancel 流程。只有解析到 selinux_policy_cancel 这类新版
-     * 辅助符号时，才走带 load_state 的调用；否则使用 clean blob /
-     * policydb_read 路线。
-     *
+     * 4.14 ??security_load_policy() 鴉싩쎍?ζ룓雅?live policy竊뚧깹?됪뼭??     * load_state/cancel 役곭쮮?귛룵?됭㎗?먨댆 selinux_policy_cancel 瓦숂굳?곁뎵
+     * 渦끻뒰寧?뤇?띰펽?띹뎔躍?load_state ?꾥컘?⑨폑??닕鵝욜뵪 clean blob /
+     * policydb_read 瓮?봇??     *
      * The referenced 4.14 services.c commits the loaded policy directly:
      *   security_load_policy(struct selinux_state *state, void *data, size_t len)
      *
@@ -1649,10 +1636,8 @@ static ssize_t call_kernel_read_file(struct file *file, void *buf, size_t count,
 }
 
 /*
- * APatch manager UID detection / APatch 管理器 UID 识别：
- * Polaris 4.9 uses a UID bypass for APatch UI reads because task names are not
- * a stable manager signal. 仅 4.9 使用该 UID 旁路，其他内核保持原来的 comm 判断。
- */
+ * APatch manager UID detection / APatch 嶸←릤??UID 瑥녶닽竊? * Polaris 4.9 uses a UID bypass for APatch UI reads because task names are not
+ * a stable manager signal. 餓?4.9 鵝욜뵪瑥?UID ?곮러竊뚦끀餓뽩냵?멧퓷?곩렅?η쉪 comm ?ㅶ뼪?? */
 static bool package_line_starts_with_apatch(const char *line, const char *end)
 {
     const char *pkg = APATCH_MANAGER_PACKAGE;
@@ -2277,11 +2262,7 @@ static bool dirtysepolicy_context_should_hide(const char *query)
      *       On EINVAL again it writes /proc/self/attr/current; EPERM is still
      *       interpreted as "context exists".
      *
-     * DirtySepolicy 的 contextExists() 不是只测 /sys/fs/selinux/context。
-     * 如果这里只拦 context 节点，它还会继续走 access fallback，最后再写
-     * /proc/self/attr/current；其中 EPERM 也会被它当成“上下文存在”。因此
-     * 这些敏感 context 必须在三条路径里都表现成 EINVAL/不存在。
-     *
+     * DirtySepolicy ??contextExists() 訝띷삸?ゆ탩 /sys/fs/selinux/context??     * 倻귝옖瓦숅뇤?ゆ떐 context ?귞궧竊뚦츆瓦섆폏瀯㎫뺌壅?access fallback竊뚧??롥냽??     * /proc/self/attr/current竊쎾끀訝?EPERM 阿잋폏熬ュ츆壤볠닇?쒍툓訝뗦뻼耶섇쑉?앫귛썱閭?     * 瓦쇾틳?뤸꽏 context 恙낂』?ⓧ툒?↑러孃꾦뇤?썼〃?경닇 EINVAL/訝띶춼?ⓦ?     *
      * Because of that three-stage fallback, hiding a dirty context requires all
      * three kernel paths to return an "invalid context" style result for
      * app-side probes.
@@ -2373,10 +2354,7 @@ static bool dirtysepolicy_avd_seqno_probe(const char *query, size_t len)
      *   SELinux.access("u:r:untrusted_app:s0",
      *                  "u:r:untrusted_app:s0", 0)
      *
-     * 这条不是 allow/deny 探针，而是读取 /sys/fs/selinux/access 返回的
-     * av_decision.seqno。只 patch /sys/fs/selinux/status 不够；这里直接识别
-     * 固定查询并返回 clean seqno=1，避免 live policy seqno 泄漏。
-     */
+     * 瓦숁씉訝띷삸 allow/deny ??뭹竊뚩뚧삸瑥삣룚 /sys/fs/selinux/access 瓦붷썮??     * av_decision.seqno?귛룵 patch /sys/fs/selinux/status 訝띶쩅竊쏂퓳?뚨쎍?θ칳??     * ?뷴츣?θ?亮띈퓭??clean seqno=1竊뚪겳??live policy seqno 力꾣폀??     */
     return access_query_matches3(query, "u:r:untrusted_app:s0",
                                  "u:r:untrusted_app:s0", "0");
 }
@@ -2413,10 +2391,8 @@ static bool dirtysepolicy_access_should_deny(const char *query, size_t len)
      * contextExists() second stage calls /access with the same hidden context
      * as source and target.  Hide either side to keep the fallback consistent.
      *
-     * 这是为了堵住 contextExists() 的第二段 fallback：它会拿同一个 context
-     * 当源和目标去查 /access。只要源或目标是需要隐藏的 dirty context，
-     * 这里就直接 deny。
-     */
+     * 瓦숁삸訝뷰틙?듕퐦 contextExists() ?꾤К雅뚧? fallback竊싧츆鴉싨떯?뚥?訝?context
+     * 壤볠틦?뚨쎅?뉐렮??/access?귛룵誤곫틦?뽫쎅?뉑삸?誤곲쉺?뤹쉪 dirty context竊?     * 瓦숅뇤弱긺쎍??deny??     */
     if (dirtysepolicy_context_should_hide(src) ||
         dirtysepolicy_context_should_hide(dst))
         return true;
@@ -2437,11 +2413,8 @@ static bool dirtysepolicy_access_should_deny(const char *query, size_t len)
      * Matching the context pair here is enough to force the DirtySepolicy
      * result to false while leaving policy-manager processes bypassed earlier.
      *
-     * DirtySepolicy 会先从 /sys/fs/selinux/class 读 class/perm 编号，再向
-     * /access 写入 source context、target context 和 class id。这里按它
-     * 固定使用的 context 对拦截即可；管理进程已经在入口处 bypass，不影响
-     * APatch/magiskpolicy 自己操作策略。
-     */
+     * DirtySepolicy 鴉싧뀍餓?/sys/fs/selinux/class 瑥?class/perm 煐뽩뤇竊뚦냽??     * /access ?쇿뀯 source context?걎arget context ??class id?귟퓳?뚧뙃若?     * ?뷴츣鵝욜뵪??context 野방떐?ゅ뜵??폑嶸←릤瓦쏁쮮藥꿰퍘?ⓨ뀯?ｅ쨪 bypass竊뚥툖壤긷뱧
+     * APatch/magiskpolicy ?ゅ런?띴퐳嶺뽫븼??     */
     if (access_contexts_match(query, "u:r:system_server:s0", "u:r:system_server:s0"))
         return true;
     if (access_contexts_match(query, "u:r:shell:s0", "u:r:su:s0"))
@@ -2735,7 +2708,7 @@ static int clean_policy_context_to_sid(const char *query, u32 *out_sid)
         return -EINVAL;
 
     if (!READ_ONCE(g_clean_policy_blob))
-        return 1; /* 没有可用的 clean blob，交给上层走别的判断 */
+        return 1; /* 亦→쐣??뵪??clean blob竊뚥벡瀯쇾툓掠귟뎔?ョ쉪?ㅶ뼪 */
 
     if (out_sid)
         *out_sid = 0;
@@ -2849,9 +2822,8 @@ static void before_policydb_arg0(hook_fargs6_t *a, void *u)
     if (!clean_policydb_redirect_supported())
         return;
 
-    if (READ_ONCE(g_internal_policy_load_depth) ||   // 模块内部加载
-        current_is_policy_manager()) {                // magiskpolicy 等
-        return;  // 完全跳过，使用原始 policydb
+    if (READ_ONCE(g_internal_policy_load_depth) ||   // 與▼쓼?낂깿?좄슬
+        current_is_policy_manager()) {                // magiskpolicy 嶺?        return;  // 若뚦뀲瓮녘퓝竊뚥슴?ⓨ렅冶?policydb
     }
     
     
@@ -3041,7 +3013,7 @@ static void before_sel_write_access(hook_fargs4_t *a, void *u)
         return;
     }
 
-    /* 4.9 path / 4.9 路径：helper ABI 不稳定，只用 legacy probe 过滤。 */
+    /* 4.9 path / 4.9 瓮?푶竊쉎elper ABI 訝띸㉢若싷펽?ょ뵪 legacy probe 瓦뉑빱??*/
     if (selinux_49_compat_path()) {
         if (legacy_should_block_access_query(sample, sample_len)) {
             n = READ_ONCE(g_clean_access_count) + 1;
@@ -3159,7 +3131,7 @@ static void before_sel_write_context(hook_fargs4_t *a, void *u)
         return;
     }
 
-    /* 4.9 path / 4.9 路径：helper ABI 不稳定，只用 legacy probe 过滤。 */
+    /* 4.9 path / 4.9 瓮?푶竊쉎elper ABI 訝띸㉢若싷펽?ょ뵪 legacy probe 瓦뉑빱??*/
     if (selinux_49_compat_path()) {
         if (legacy_should_block_access_query(sample, sample_len)) {
             n = READ_ONCE(g_clean_access_count) + 1;
@@ -3425,8 +3397,7 @@ static int install_write_op_hooks(void)
     log_symbol_addr("sel_write_context", (void *)addr_context);
 
     /*
-     * Polaris 4.9 write_op path / Polaris 4.9 write_op 路径：
-     * direct sel_write_* symbols are unreliable here; write_op[5]/[6] are the
+     * Polaris 4.9 write_op path / Polaris 4.9 write_op 瓮?푶竊?     * direct sel_write_* symbols are unreliable here; write_op[5]/[6] are the
      * SEL_CONTEXT/SEL_ACCESS slots from the 4.9 selinuxfs layout.
      */
     if (selinux_49_compat_path()) {
@@ -3471,7 +3442,7 @@ static int install_write_op_hooks(void)
         return 0;
     }
 
-    /* Non-4.9 / 非 4.9：保持原来的 direct-symbol-first hook 顺序。 */
+    /* Non-4.9 / ??4.9竊싦퓷?곩렅?η쉪 direct-symbol-first hook 窈뷴틣??*/
     if (addr_access) {
         g_funcs[g_hooks++] = (void *)addr_access;
         pr_info("[selinux_hook] hook sel_write_access argc=3 mode=direct\n");
@@ -3503,11 +3474,10 @@ static int install_write_op_hooks(void)
      *   KP E unknown symbol: hotpatch_nosync
      *   KP load kpm: selinux_magisk_access_filter, rc: -2
      *
-     * 这不是 SELinux hook 逻辑失败，而是 KPM loader 在重定位阶段就找不到
-     * hotpatch_nosync，导致 init() 都不会执行。为了让模块至少能加载并打印
-     * 诊断，本分支完全避免静态导入 hotpatch_nosync；如果 direct symbol
-     * 不存在，就记录降级原因，而不是再尝试写 write_op[]。
-     *
+     * 瓦쇾툖??SELinux hook ?삭풌鸚김뇰竊뚩뚧삸 KPM loader ?③뇥若싦퐤?뜻?弱길돻訝띶댆
+     * hotpatch_nosync竊뚦???init() ?썰툖鴉싨돢烏뚣귚맏雅녻?與▼쓼?녑컩?썲뒥饔썲뭉?볟뜲
+     * 瑥딀뼪竊뚧쑍?녷뵱若뚦뀲?욕뀓?숁곩???hotpatch_nosync竊쎾쫩??direct symbol
+     * 訝띶춼?⑨펽弱김?壤뺡솉瀛㎩렅?좑펽?뚥툖??냽弱앲캊??write_op[]??     *
      * That failure happens before module init(), so this c02-compatible build
      * deliberately avoids importing hotpatch_nosync at all. If direct symbols
      * are absent, log the downgrade and keep the KPM loaded for diagnostics
@@ -3613,8 +3583,7 @@ static bool filter_procattr_current(const char *hook, const char *lsm,
     sample[0] = '\0';
     sample_len = value && size ? copy_query_sample(sample, (const char *)value, size) : 0;
     /*
-     * 4.9 setprocattr path / 4.9 setprocattr 路径：
-     * avoid clean policydb helpers with device-specific ABI; only block known
+     * 4.9 setprocattr path / 4.9 setprocattr 瓮?푶竊?     * avoid clean policydb helpers with device-specific ABI; only block known
      * DirtySepolicy probes while allowing manager/root callers through.
      */
     if (selinux_49_compat_path()) {
@@ -3703,10 +3672,8 @@ static void before_security_setprocattr(hook_fargs4_t *a, void *u)
 
 
 /*
- * Shared task-first setprocattr body / 共用的 task-first setprocattr 主体：
- * Polaris 4.9 passes (task, name, value, size), so arg0 is not lsm/name and the
- * normal wrappers cannot be reused directly. 两个 4.9 wrapper 只差日志名和计数器。
- */
+ * Shared task-first setprocattr body / ?긺뵪??task-first setprocattr 訝삡퐪竊? * Polaris 4.9 passes (task, name, value, size), so arg0 is not lsm/name and the
+ * normal wrappers cannot be reused directly. 訝ㅴ릉 4.9 wrapper ?ゅ량?ε퓱?띶뭽溫→빊?ⓦ? */
 static void before_task_setprocattr_49(hook_fargs4_t *a, const char *hook,
                                        u32 *counter)
 {
@@ -3835,9 +3802,9 @@ static ssize_t copy_clean_status_to_user(char __user *buf, size_t count,
  *
  * struct selinux_kernel_status layout (20 bytes):
  *   u32 version;      offset  0
- *   u32 sequence;     offset  4  ← patch to clean value (0 or 4)
+ *   u32 sequence;     offset  4  ??patch to clean value (0 or 4)
  *   u32 enforcing;    offset  8  (always 1; not patched)
- *   u32 policyload;   offset 12  ← patch to clean value (0 or 1)
+ *   u32 policyload;   offset 12  ??patch to clean value (0 or 1)
  *   u32 deny_unknown; offset 16  (always 1; not patched)
  *
  * struct vm_area_struct vm_start offset:
@@ -4148,7 +4115,7 @@ static int kpm_strncmp(const char *s1, const char *s2, unsigned int n) {
     if (n == 0) return 0;
     return *(unsigned char *)s1 - *(unsigned char *)s2;
 }
-/* --- devpts 필터링을 위한 추가 코드 시작 --- */
+/* --- devpts ?꾪꽣留곸쓣 ?꾪븳 異붽? 肄붾뱶 ?쒖옉 --- */
 static bool is_devpts_path(const char *path) {
     if (!path) return false;
     if (kpm_strncmp(path, "/dev/pts/", 9) != 0) return false; 
@@ -4157,62 +4124,28 @@ static bool is_devpts_path(const char *path) {
     while (*p >= '0' && *p <= '9') p++;
     return *p == '\0';
 }
-// 🟢 삭제한 자리에 이 코드를 붙여넣으세요.
+// ?윟 ??젣???먮━????肄붾뱶瑜?遺숈뿬?ｌ쑝?몄슂.
 static bool is_target_process(void) {
-    // UID가 10000 이상인 모든 일반 사용자 앱에 적용
+    // UID媛 10000 ?댁긽??紐⑤뱺 ?쇰컲 ?ъ슜???깆뿉 ?곸슜
     if (current_uid() >= 10000) {
         return true;
     }
     return false;
 }
-// 🟢 기존 is_target_process() 함수는 그대로 두고, 그 아래에 추가!
+// ?윟 湲곗〈 is_target_process() ?⑥닔??洹몃?濡??먭퀬, 洹??꾨옒??異붽?!
 static bool is_tiktok_or_duck(const char *comm) {
     if (!comm) return false;
-
-    /* [CRITICAL FIX]
-     * 안드로이드 메인 스레드의 comm 은 항상 "main" 이다.
-     * (zygote 가 프로세스명을 설정한 뒤 ART 가 메인 스레드를 "main" 으로 rename)
-     * 따라서 comm 만으로 대상을 판별하면 메인 스레드에서 호출되는
-     * stat/statfs 는 전부 매칭에 실패한다.
-     *
-     * comm 이 프로세스명이 아니면 /proc/<pid>/cmdline(argv[0]) 으로 재검사한다.
-     */
-    {
-        char pname[256];
-        struct mm_struct *mm = current->mm;
-
-        if (mm) {
-            unsigned long arg_start = READ_ONCE(mm->arg_start);
-
-            if (arg_start) {
-                int n = compat_strncpy_from_user(pname,
-                                                 (const char __user *)arg_start,
-                                                 sizeof(pname) - 1);
-                if (n > 0) {
-                    pname[n] = '\0';
-                    if (kpm_strstr(pname, "ss.android")   != NULL) return true;
-                    if (kpm_strstr(pname, "trill")        != NULL) return true;
-                    if (kpm_strstr(pname, "musically")    != NULL) return true;
-                    if (kpm_strstr(pname, "tiktok")       != NULL) return true;
-                    if (kpm_strstr(pname, "eltavine")     != NULL) return true;
-                    if (kpm_strstr(pname, "duckdetector") != NULL) return true;
-                    if (kpm_strstr(pname, "facebook")     != NULL) return true;
-                }
-            }
-        }
-    }
     
-    // 틱톡 (메인+자식) 및 라이트
-    if (kpm_strstr(comm, "ss.android") != NULL) return true;
+    // ?깊넚 (硫붿씤+?먯떇) 諛??쇱씠??    if (kpm_strstr(comm, "ss.android") != NULL) return true;
     if (kpm_strstr(comm, "trill") != NULL) return true;
     if (kpm_strstr(comm, "musically") != NULL) return true; 
     
-    // 덕디텍터 메인 및 자식
+    // ?뺣뵒?랁꽣 硫붿씤 諛??먯떇
     if (kpm_strstr(comm, "eltavine") != NULL) return true;
     if (kpm_strstr(comm, "detector_zygote") != NULL) return true;
     if (kpm_strstr(comm, "facebook") != NULL) return true;
 
-    // 시스템 격리 프로세스 (맵 스캔 주범)
+    // ?쒖뒪??寃⑸━ ?꾨줈?몄뒪 (留??ㅼ틪 二쇰쾾)
     if (kpm_strstr(comm, "app_zygote") != NULL) return true;
     if (kpm_strstr(comm, "webview_zygote") != NULL) return true;
     if (kpm_strstr(comm, "usap64") != NULL) return true;
@@ -4228,7 +4161,7 @@ static void before_newfstatat_devpts(hook_fargs1_t *a, void *u) {
     const char __user *filename = (const char __user *)regs->regs[1];
     char buf[256];
     
-    // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
+    // ?윟 ?섏젙: nofault ?⑥닔瑜??ъ슜?섏뿬 ?섏씠吏 ?댄듃 諛⑹?
     if (copy_from_kernel_nofault_fn) {
         if (copy_from_kernel_nofault_fn(buf, filename, 255) != 0) return;
         buf[255] = '\0';
@@ -4250,7 +4183,7 @@ static void before_statx_devpts(hook_fargs1_t *a, void *u) {
     const char __user *filename = (const char __user *)regs->regs[1];
     char buf[256];
     
-    // 🟢 수정: nofault 함수를 사용하여 페이지 폴트 방지
+    // ?윟 ?섏젙: nofault ?⑥닔瑜??ъ슜?섏뿬 ?섏씠吏 ?댄듃 諛⑹?
     if (copy_from_kernel_nofault_fn) {
         if (copy_from_kernel_nofault_fn(buf, filename, 255) != 0) return;
         buf[255] = '\0';
@@ -4263,28 +4196,25 @@ static void before_statx_devpts(hook_fargs1_t *a, void *u) {
         a->ret = (uint64_t)-ENOENT;
     }
 }
-/* --- Vector 로그 필터링을 위한 추가 코드 시작 --- */
+/* --- Vector 濡쒓렇 ?꾪꽣留곸쓣 ?꾪븳 異붽? 肄붾뱶 ?쒖옉 --- */
 static void before_android_log_buf_write(hook_fargs4_t *a, void *u) {
-    // 1. 훅 대상 프로세스가 아니라면 통과
+    // 1. ??????꾨줈?몄뒪媛 ?꾨땲?쇰㈃ ?듦낵
     if (!is_target_process()) return;
-    if (!is_tiktok_or_duck(current_comm())) return; // 👈 이 줄 추가!
 
-    // 2. 로그 메시지(tag)와 내용(msg) 포인터 가져오기
-    const char *tag = (const char *)a->arg2;
-    (void)a->arg3; // 🟢 이렇게 써주면 경고가 사라집니다.
-    // 3. tag나 msg에 'selinux_hook' 또는 'Vector'가 포함되어 있으면 로그 기록을 건너뜀
+    // 2. 濡쒓렇 硫붿떆吏(tag)? ?댁슜(msg) ?ъ씤??媛?몄삤湲?    const char *tag = (const char *)a->arg2;
+    (void)a->arg3; // ?윟 ?대젃寃??⑥＜硫?寃쎄퀬媛 ?щ씪吏묐땲??
+    // 3. tag??msg??'selinux_hook' ?먮뒗 'Vector'媛 ?ы븿?섏뼱 ?덉쑝硫?濡쒓렇 湲곕줉??嫄대꼫?
     if (tag && (kpm_strncmp(tag, "selinux_hook", 12) == 0 || kpm_strncmp(tag, "Vector", 6) == 0)) {
         a->skip_origin = 1;
-        a->ret = 0; // 로그가 정상적으로 기록된 것처럼 0을 반환
+        a->ret = 0; // 濡쒓렇媛 ?뺤긽?곸쑝濡?湲곕줉??寃껋쿂??0??諛섑솚
         return;
     }
-    // (선택) 메시지 내용에 특정 단어가 포함된 경우도 필터링 가능
-    // if (msg && strstr(msg, "selinux_hook")) { ... }
+    // (?좏깮) 硫붿떆吏 ?댁슜???뱀젙 ?⑥뼱媛 ?ы븿??寃쎌슦???꾪꽣留?媛??    // if (msg && strstr(msg, "selinux_hook")) { ... }
 }
-/* --- Vector 로그 필터링을 위한 추가 코드 끝 --- */
-/* --- devpts 필터링을 위한 추가 코드 끝 --- */
+/* --- Vector 濡쒓렇 ?꾪꽣留곸쓣 ?꾪븳 異붽? 肄붾뱶 ??--- */
+/* --- devpts ?꾪꽣留곸쓣 ?꾪븳 異붽? 肄붾뱶 ??--- */
 
-/* statfs 구조체 내부의 f_fsid 접근을 위한 최소 정의 추가 */
+/* statfs 援ъ“泥??대???f_fsid ?묎렐???꾪븳 理쒖냼 ?뺤쓽 異붽? */
 struct k_statfs {
     long f_type;
     long f_bsize;
@@ -4296,10 +4226,10 @@ struct k_statfs {
     struct { int __val[2]; } f_fsid;
 };
 
-/* stat 구조체 최소 정의 (Inode 접근용) */
+/* stat 援ъ“泥?理쒖냼 ?뺤쓽 (Inode ?묎렐?? */
 struct k_stat {
     unsigned long st_dev;
-    unsigned long st_ino;      // 👈 Inode 번호
+    unsigned long st_ino;      // ?몚 Inode 踰덊샇
     unsigned int st_mode;
     unsigned int st_nlink;
     unsigned int st_uid;
@@ -4312,7 +4242,7 @@ struct k_stat {
     struct { long tv_sec; long tv_nsec; } st_mtim;
     struct { long tv_sec; long tv_nsec; } st_ctim;
 };
-/* --- seq_file 구조체 최소 정의 추가 --- */
+/* --- seq_file 援ъ“泥?理쒖냼 ?뺤쓽 異붽? --- */
 struct seq_file {
     char *buf;
     size_t size;
@@ -4320,7 +4250,7 @@ struct seq_file {
     size_t count;
 };
 
-/* --- 커널용 memcmp 대체 함수 --- */
+/* --- 而ㅻ꼸??memcmp ?泥??⑥닔 --- */
 static int kpm_memcmp(const void *s1, const void *s2, size_t n) {
     const unsigned char *p1 = s1, *p2 = s2;
     while (n--) {
@@ -4329,7 +4259,7 @@ static int kpm_memcmp(const void *s1, const void *s2, size_t n) {
     }
     return 0;
 }
-/* 커널 환경용 memmem 대체 함수 (바이너리 데이터 검색) */
+/* 而ㅻ꼸 ?섍꼍??memmem ?泥??⑥닔 (諛붿씠?덈━ ?곗씠??寃?? */
 static void *memmem_local(const void *haystack, size_t haystacklen,
                           const void *needle, size_t needlelen) {
     if (!haystack || !needle || haystacklen < needlelen || needlelen == 0) return NULL;
@@ -4340,7 +4270,7 @@ if (kpm_memcmp((const char *)haystack + i, needle, needlelen) == 0)
     return NULL;
 }
 
-/* 커널 환경용 strstr 대체 함수 */
+/* 而ㅻ꼸 ?섍꼍??strstr ?泥??⑥닔 */
 static char *kpm_strstr(const char *haystack, const char *needle) {
     if (!*needle) return (char *)haystack;
     for (; *haystack; ++haystack) {
@@ -4356,7 +4286,7 @@ static char *kpm_strstr(const char *haystack, const char *needle) {
     }
     return NULL;
 }
-/* --- show_map_vma 필터링을 위한 추가 코드 시작 --- */
+/* --- show_map_vma ?꾪꽣留곸쓣 ?꾪븳 異붽? 肄붾뱶 ?쒖옉 --- */
 static bool is_hidden_module(struct seq_file *m) {
     if (!m || !m->buf || m->count == 0) return false;
     
@@ -4371,10 +4301,10 @@ static const char *keywords[] = {
     "qemu",
     "goldfish",
     "ranchu",
-    "com.android.virt",     // 👈 AVF APEX 경로 차단
-    "VirtualizationService", // 👈 가상화 서비스 이름 차단
-    "crosvm",               // 👈 AVF의 VM 관리자 차단
-    "virtmgr",              // 👈 가상화 관리자 차단
+    "com.android.virt",     // ?몚 AVF APEX 寃쎈줈 李⑤떒
+    "VirtualizationService", // ?몚 媛?곹솕 ?쒕퉬???대쫫 李⑤떒
+    "crosvm",               // ?몚 AVF??VM 愿由ъ옄 李⑤떒
+    "virtmgr",              // ?몚 媛?곹솕 愿由ъ옄 李⑤떒
     NULL
 };
     
@@ -4387,9 +4317,8 @@ static const char *keywords[] = {
 }
 
 static void before_show_map_vma(hook_fargs2_t *a, void *u) {
-    // 🟢 UID 체크 + 타겟 앱(틱톡/덕디텍터) 체크 추가
+    // ?윟 UID 泥댄겕 + ?寃????깊넚/?뺣뵒?랁꽣) 泥댄겕 異붽?
     if (current_uid() < 10000) return;
-    if (!is_tiktok_or_duck(current_comm())) return; // 👈 이 줄 추가!
     
     struct seq_file *m = (struct seq_file *)a->arg0;
     a->local.data0 = 0;
@@ -4397,11 +4326,10 @@ static void before_show_map_vma(hook_fargs2_t *a, void *u) {
         a->local.data0 = m->count; 
     }
 }
-/* --- Fake Enforcing: /sys/fs/selinux/enforce 읽기 후킹 콜백 --- */
+/* --- Fake Enforcing: /sys/fs/selinux/enforce ?쎄린 ?꾪궧 肄쒕갚 --- */
 static void before_sel_read_enforce(hook_fargs4_t *a, void *u)
 {
-    // 시스템 프로세스(uid < 10000)는 원본 값을 그대로 보게 함
-    if (current_uid() < 10000) return;
+    // ?쒖뒪???꾨줈?몄뒪(uid < 10000)???먮낯 媛믪쓣 洹몃?濡?蹂닿쾶 ??    if (current_uid() < 10000) return;
 
     char __user *buf = (char __user *)a->arg1; // arg1: buf
     size_t count = (size_t)a->arg2;            // arg2: count
@@ -4416,7 +4344,7 @@ static void before_sel_read_enforce(hook_fargs4_t *a, void *u)
         }
     }
 
-    // 이미 다 읽었으면 EOF 반환
+    // ?대? ???쎌뿀?쇰㈃ EOF 諛섑솚
     if (pos >= 2) {
         a->skip_origin = 1;
         a->ret = 0;
@@ -4434,17 +4362,16 @@ static void before_sel_read_enforce(hook_fargs4_t *a, void *u)
         }
 
         if (ppos) {
-            *(loff_t *)ppos = pos + to_copy; // 파일 포인터 업데이트
+            *(loff_t *)ppos = pos + to_copy; // ?뚯씪 ?ъ씤???낅뜲?댄듃
         }
         
         a->skip_origin = 1;
-        a->ret = to_copy; // "1\n"을 읽은 길이(2) 반환
+        a->ret = to_copy; // "1\n"???쎌? 湲몄씠(2) 諛섑솚
     }
 }
 static void after_show_map_vma(hook_fargs2_t *a, void *u) {
-    // 🟢 UID 체크 + 타겟 앱(틱톡/덕디텍터) 체크 추가
+    // ?윟 UID 泥댄겕 + ?寃????깊넚/?뺣뵒?랁꽣) 泥댄겕 異붽?
     if (current_uid() < 10000) return;
-    if (!is_tiktok_or_duck(current_comm())) return; // 👈 이 줄 추가!
     
     struct seq_file *m = (struct seq_file *)a->arg0;
     if (m && m->buf && a->local.data0) {
@@ -4454,9 +4381,9 @@ static void after_show_map_vma(hook_fargs2_t *a, void *u) {
         }
     }
 }
-/* --- show_map_vma 필터링을 위한 추가 코드 끝 --- */
+/* --- show_map_vma ?꾪꽣留곸쓣 ?꾪븳 異붽? 肄붾뱶 ??--- */
 
-/* --- 유저 메모리 안전 읽기 (커널에서 유저 포인터 직접 역참조 금지) --- */
+/* --- ?좎? 硫붾え由??덉쟾 ?쎄린 (而ㅻ꼸?먯꽌 ?좎? ?ъ씤??吏곸젒 ??갭議?湲덉?) --- */
 static inline int kpm_read_user(void *dst, const void __user *src, size_t n)
 {
     long r;
@@ -4466,14 +4393,13 @@ static inline int kpm_read_user(void *dst, const void __user *src, size_t n)
     return (r == (long)n) ? 0 : -EFAULT;
 }
 
-/* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡/덕디텍터 전용) --- */
+/* --- statfs ?쒖뒪??肄??꾪궧 肄쒕갚 (UUID ?꾩“ - ?깊넚/?뺣뵒?랁꽣 ?꾩슜) --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
 
-    /* 시스템 프로세스는 즉시 리턴 (렉 방지) */
+    /* ?쒖뒪???꾨줈?몄뒪??利됱떆 由ы꽩 (??諛⑹?) */
     if (current_uid() < 10000) return;
 
-    if (!is_tiktok_or_duck(current_comm())) return;
 
     if ((long)a->ret != 0) return;
 
@@ -4483,10 +4409,10 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[2];
     if (!buf) return;
 
-    /* [FIX-2] 상수 대입 대신 실제 fsid 에 salt 를 XOR 한다.
-     * XOR 은 전단사(bijection)이므로 "서로 다른 파일시스템" 관계가 유지된다.
-     * 기존처럼 상수를 넣으면 /, /data, /storage 가 모두 같은 fsid 가 되어
-     * 물리적으로 불가능한 상태(= 즉시 위조 탐지)가 된다. */
+    /* [FIX-2] ?곸닔 ???????ㅼ젣 fsid ??salt 瑜?XOR ?쒕떎.
+     * XOR ? ?꾨떒??bijection)?대?濡?"?쒕줈 ?ㅻⅨ ?뚯씪?쒖뒪?? 愿怨꾧? ?좎??쒕떎.
+     * 湲곗〈泥섎읆 ?곸닔瑜??ｌ쑝硫?/, /data, /storage 媛 紐⑤몢 媛숈? fsid 媛 ?섏뼱
+     * 臾쇰━?곸쑝濡?遺덇??ν븳 ?곹깭(= 利됱떆 ?꾩“ ?먯?)媛 ?쒕떎. */
     int sv[2] = {0, 0};
     if (kpm_read_user(sv, &buf->f_fsid.__val[0], sizeof(sv)) != 0) return;
     int val0 = sv[0] ^ (int)(g_fake_fsid & 0xFFFFFFFFUL);
@@ -4497,11 +4423,10 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
         if (copy_to_user_nofault_fn(&buf->f_fsid.__val[1], &val1, sizeof(int)) != 0) return;
     }
 }
-/* --- fstatfs 시스템 콜 후킹 콜백 (fd 기반 우회 차단) --- */
+/* --- fstatfs ?쒖뒪??肄??꾪궧 肄쒕갚 (fd 湲곕컲 ?고쉶 李⑤떒) --- */
 static void after_fstatfs(hook_fargs2_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
     if (current_uid() < 10000) return;
-    if (!is_tiktok_or_duck(current_comm())) return;
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
@@ -4521,11 +4446,10 @@ static void after_fstatfs(hook_fargs2_t *a, void *u) {
         copy_to_user_nofault_fn(&buf->f_fsid.__val[1], &val1, sizeof(int));
     }
 }
-/* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조 - 틱톡/덕디텍터 전용) --- */
+/* --- newfstatat ?쒖뒪??肄??꾪궧 肄쒕갚 (Inode ?꾩“ - ?깊넚/?뺣뵒?랁꽣 ?꾩슜) --- */
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
     if (current_uid() < 10000) return;
-    if (!is_tiktok_or_duck(current_comm())) return;
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
@@ -4541,7 +4465,7 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
         if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     }
 
-    /* /dev/pts UID/GID 위조 (기존 동작 유지) */
+    /* /dev/pts UID/GID ?꾩“ (湲곗〈 ?숈옉 ?좎?) */
     if (is_devpts_path(path)) {
         struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
         if (buf && copy_to_user_nofault_fn) {
@@ -4553,12 +4477,12 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
         return;
     }
 
-    /* [FIX-3] 경로 매칭 제거: 대상 앱의 모든 stat 에 일관 적용.
-     * 특정 경로만 변조하면 다른 경로와의 비교로 위조가 드러난다. */
+    /* [FIX-3] 寃쎈줈 留ㅼ묶 ?쒓굅: ????깆쓽 紐⑤뱺 stat ???쇨? ?곸슜.
+     * ?뱀젙 寃쎈줈留?蹂議고븯硫??ㅻⅨ 寃쎈줈???鍮꾧탳濡??꾩“媛 ?쒕윭?쒕떎. */
     struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
     if (!buf) return;
 
-    /* [FIX-2] 실제 inode 에 salt XOR */
+    /* [FIX-2] ?ㅼ젣 inode ??salt XOR */
     unsigned long real_ino = 0;
     if (kpm_read_user(&real_ino, &buf->st_ino, sizeof(real_ino)) != 0) return;
     unsigned long new_ino = real_ino ^ g_fake_ino;
@@ -4566,11 +4490,10 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
         if (copy_to_user_nofault_fn(&buf->st_ino, &new_ino, sizeof(unsigned long)) != 0) return;
     }
 }
-/* --- fstat 시스템 콜 후킹 콜백 (fd 기반 우회 차단) --- */
+/* --- fstat ?쒖뒪??肄??꾪궧 肄쒕갚 (fd 湲곕컲 ?고쉶 李⑤떒) --- */
 static void after_fstat_inode(hook_fargs1_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
     if (current_uid() < 10000) return;
-    if (!is_tiktok_or_duck(current_comm())) return;
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
@@ -4587,11 +4510,10 @@ static void after_fstat_inode(hook_fargs1_t *a, void *u) {
         copy_to_user_nofault_fn(&buf->st_ino, &new_ino, sizeof(unsigned long));
     }
 }
-/* --- statx 시스템 콜 후킹 콜백 (최신 안드로이드 대응) --- */
+/* --- statx ?쒖뒪??肄??꾪궧 肄쒕갚 (理쒖떊 ?덈뱶濡쒖씠????? --- */
 static void after_statx_inode(hook_fargs5_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
     if (current_uid() < 10000) return;
-    if (!is_tiktok_or_duck(current_comm())) return;
     if ((long)a->ret != 0) return;
 
     struct pt_regs *regs = (struct pt_regs *)a->arg0;
@@ -4607,7 +4529,7 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
         if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     }
 
-    /* /dev/pts UID/GID 위조 (기존 동작 유지) */
+    /* /dev/pts UID/GID ?꾩“ (湲곗〈 ?숈옉 ?좎?) */
     if (is_devpts_path(path)) {
         void __user *buf = (void __user *)regs->regs[4];
         if (buf && copy_to_user_nofault_fn) {
@@ -4619,7 +4541,7 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
         return;
     }
 
-    /* [FIX-3] 경로 매칭 제거 → 대상 앱의 모든 statx 에 일관 적용 */
+    /* [FIX-3] 寃쎈줈 留ㅼ묶 ?쒓굅 ??????깆쓽 紐⑤뱺 statx ???쇨? ?곸슜 */
     void __user *buf = (void __user *)regs->regs[4];
     if (!buf) return;
 
@@ -4627,19 +4549,18 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
     if (kpm_read_user(&cur_ino, (char __user *)buf + 0x20, sizeof(cur_ino)) != 0)
         return;
 
-    /* [FIX-2] 실제 inode 에 salt XOR */
+    /* [FIX-2] ?ㅼ젣 inode ??salt XOR */
     unsigned long new_ino = cur_ino ^ g_fake_ino;
     if (copy_to_user_nofault_fn) {
         copy_to_user_nofault_fn((char*)buf + 0x20, &new_ino, sizeof(unsigned long));
     }
 }
-/* ===== [수정] seq_read 후킹 (maps 파일 내용 가로채기) ===== */
+/* ===== [?섏젙] seq_read ?꾪궧 (maps ?뚯씪 ?댁슜 媛濡쒖콈湲? ===== */
 static void after_seq_read(hook_fargs4_t *a, void *u) {
     long ret = (long)a->ret;
     if (ret <= 0) return;
 
-    // 대상 앱이 아니면 무시
-    if (!is_tiktok_or_duck(current_comm())) return;
+    // ????깆씠 ?꾨땲硫?臾댁떆
 
     char __user *buf = (char __user *)a->arg1;
     if (!buf) return;
@@ -4647,14 +4568,14 @@ static void after_seq_read(hook_fargs4_t *a, void *u) {
     char kbuf[4096];
     if (ret > sizeof(kbuf) - 1) ret = sizeof(kbuf) - 1;
 
-    // 유저 버퍼에서 커널 버퍼로 복사
+    // ?좎? 踰꾪띁?먯꽌 而ㅻ꼸 踰꾪띁濡?蹂듭궗
     if (compat_strncpy_from_user(kbuf, buf, ret) <= 0) return;
     kbuf[ret] = '\0';
 
     bool modified = false;
     char *p;
 
-    // strstr 대신 kpm_strstr 사용, memcpy 대신 copy_bytes 사용
+    // strstr ???kpm_strstr ?ъ슜, memcpy ???copy_bytes ?ъ슜
     while ((p = kpm_strstr(kbuf, "qemu")) != NULL) { 
         copy_bytes(p, "none", 4); 
         modified = true; 
@@ -4694,7 +4615,7 @@ static long init(const char *args, const char *event, void *__user r)
             use_clean_blob_route() ? 1 : 0);
     resolve_required_symbols_once();
 
-    /* Raw spinlock helpers — kfunc wrappers are not exported on this kernel,
+    /* Raw spinlock helpers ??kfunc wrappers are not exported on this kernel,
      * so resolve through kallsyms and call via function pointer.  The locks
      * become no-ops if resolution fails, which is acceptable for these
      * scope arrays (they only see per-task scope entry/exit pairs that
@@ -4738,7 +4659,7 @@ static long init(const char *args, const char *event, void *__user r)
     if (!filp_open_fn || !filp_close_fn || !kernel_read_fn || !vfs_llseek_fn)
         pr_warn("[selinux_hook] cannot find file-read symbols: filp_open=%px filp_close=%px kernel_read=%px vfs_llseek=%px\n",
                 filp_open_fn, filp_close_fn, kernel_read_fn, vfs_llseek_fn);
-    /* 4.9 only / 仅 4.9：解析 APatch 管理器 UID，供 current_is_policy_manager() 使用。 */
+    /* 4.9 only / 餓?4.9竊싪㎗??APatch 嶸←릤??UID竊뚥풘 current_is_policy_manager() 鵝욜뵪??*/
     if (selinux_49_compat_path())
         detect_apatch_manager_uid();
     security_load_policy_fn = (void *)lookup_name_optional_suffix("security_load_policy");
@@ -4783,7 +4704,7 @@ static long init(const char *args, const char *event, void *__user r)
     if (!sidtab_cancel_convert_fn)
         pr_warn("[selinux_hook] cannot find sidtab_cancel_convert, clean snapshot may leave live policy busy\n");
     /*
-     * 4.9 security_read_policy ABI is vendor-specific / 4.9 该 helper ABI 依机型变化：
+     * 4.9 security_read_policy ABI is vendor-specific / 4.9 瑥?helper ABI 堊앮쑛?뗥룜?뽳폏
      * skip snapshot and hook on 4.9; non-4.9 keeps the existing clean-policy path.
      */
     if (!security_read_policy_fn) {
@@ -4808,7 +4729,7 @@ static long init(const char *args, const char *event, void *__user r)
         pr_warn("[selinux_hook] intel_av cannot find type_attribute_bounds_av, type bounds masking will be skipped\n");
 
     if (security_read_policy_fn) {
-        /* Non-4.9 only / 仅非 4.9：4.9 不进入 g_hooks++，避免按错误 ABI hook。 */
+        /* Non-4.9 only / 餓낂씆 4.9竊?.9 訝띹퓵??g_hooks++竊뚪겳?띷뙃?숃? ABI hook??*/
         if (!selinux_49_compat_path()) {
             int argc = selinux_state_arg_required() ? 3 : 2;
 
@@ -4883,7 +4804,7 @@ static long init(const char *args, const char *event, void *__user r)
         selinux_hook_dbg("[selinux_hook] security_load_policy hook skipped; clean snapshots call it directly\n");
     }
 
-    /* setprocattr ABI split / setprocattr ABI 分叉：4.9 是 task-first，其他内核走原签名探测。 */
+    /* setprocattr ABI split / setprocattr ABI ?녶룊竊?.9 ??task-first竊뚦끀餓뽩냵?멱뎔?잏??띷렋役뗣?*/
     addr = (unsigned long)lookup_name_optional_suffix("security_setprocattr");
     if (addr) {
         if (selinux_49_compat_path()) {
@@ -4933,8 +4854,7 @@ static long init(const char *args, const char *event, void *__user r)
     }
 
     /*
-     * Policydb redirect hooks / policydb 重定向 hooks：
-     * These helpers depend on newer/stateful SELinux ABI. 4.9 already uses the
+     * Policydb redirect hooks / policydb ?띶츣??hooks竊?     * These helpers depend on newer/stateful SELinux ABI. 4.9 already uses the
      * lightweight legacy filters above, so skip these device-specific hooks there.
      */
     addr = (unsigned long)lookup_name_optional_suffix("context_struct_compute_av");
@@ -5008,8 +4928,8 @@ static long init(const char *args, const char *event, void *__user r)
         pr_info("[selinux_hook] hook statx @ %lx for devpts\n", addr);
         hook_wrap((void *)addr, 1, before_statx_devpts, after_statx_inode, NULL); 
     }
-    /* --- devpts 시스템 콜 후킹 등록 끝 --- */
-      /* --- __android_log_buf_write 후킹 등록 --- */
+    /* --- devpts ?쒖뒪??肄??꾪궧 ?깅줉 ??--- */
+      /* --- __android_log_buf_write ?꾪궧 ?깅줉 --- */
     addr = (unsigned long)lookup_name_optional_suffix("__android_log_buf_write");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
@@ -5018,9 +4938,9 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find __android_log_buf_write\n");
     }
-      /* --- __android_log_buf_write 후킹 등록 끝 --- */
+      /* --- __android_log_buf_write ?꾪궧 ?깅줉 ??--- */
     
-    /* --- statfs 시스템 콜 후킹 등록 --- */
+    /* --- statfs ?쒖뒪??肄??꾪궧 ?깅줉 --- */
     addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_statfs");
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_statfs");
     if (addr) {
@@ -5030,7 +4950,7 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_statfs\n");
     }
-    /* --- fstatfs 등록 (fd 기반 우회 차단) --- */
+    /* --- fstatfs ?깅줉 (fd 湲곕컲 ?고쉶 李⑤떒) --- */
     addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_fstatfs");
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_fstatfs");
     if (addr) {
@@ -5040,8 +4960,8 @@ static long init(const char *args, const char *event, void *__user r)
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_fstatfs\n");
     }
-    /* --- fstat 등록 (fd 기반 우회 차단) --- */
-    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstat");  // arm64 실제 심볼
+    /* --- fstat ?깅줉 (fd 湲곕컲 ?고쉶 李⑤떒) --- */
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstat");  // arm64 ?ㅼ젣 ?щ낵
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_fstat");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
@@ -5052,20 +4972,20 @@ static long init(const char *args, const char *event, void *__user r)
     }
     /* ---------------------------------- */
 
-    /* --- newfstatat 시스템 콜 후킹 등록 (devpts + Inode 통합) --- */
+    /* --- newfstatat ?쒖뒪??肄??꾪궧 ?깅줉 (devpts + Inode ?듯빀) --- */
     addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_newfstatat");
     if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_newfstatat");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook newfstatat @ %lx for devpts & inode\n", addr);
-        // 🟢 before(devpts)와 after(inode)를 한 번에 등록!
+        // ?윟 before(devpts)? after(inode)瑜???踰덉뿉 ?깅줉!
         hook_wrap((void *)addr, 1, before_newfstatat_devpts, after_newfstatat_inode, NULL);
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_newfstatat\n");
     }
     /* -------------------------------------------------- */
     
- /* ===== 👇 새로 추가할 seq_read 후킹 코드 ===== */
+ /* ===== ?몙 ?덈줈 異붽???seq_read ?꾪궧 肄붾뱶 ===== */
     addr = (unsigned long)lookup_name_optional_suffix("seq_read");
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
@@ -5086,7 +5006,7 @@ static long init(const char *args, const char *event, void *__user r)
 }
 
 
-/* (기존에 있던 static long init 함수가 여기서 시작됩니다) */
+/* (湲곗〈???덈뜕 static long init ?⑥닔媛 ?ш린???쒖옉?⑸땲?? */
 static long exit_(void *__user r)
 {
     WRITE_ONCE(g_write_op_install_deferred, false);
