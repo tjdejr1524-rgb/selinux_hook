@@ -4426,11 +4426,11 @@ static void after_show_map_vma(hook_fargs2_t *a, void *u) {
 /* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
-    
-    // 🟢 추가: 시스템 프로세스는 즉시 리턴 (렉 방지)
-    if (current_uid() < 10000) return; 
-    
-    if (!is_tiktok_or_duck(current_comm())) return; 
+
+    /* 시스템 프로세스는 즉시 리턴 (렉 방지) */
+    if (current_uid() < 10000) return;
+
+    if (!is_tiktok_or_duck(current_comm())) return;
 
     if ((long)a->ret != 0) return;
 
@@ -4440,17 +4440,43 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
     struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[2];
     if (!buf) return;
 
-    int val0 = (int)(g_fake_fsid & 0xFFFFFFFF);
-    int val1 = (int)((g_fake_fsid >> 32) & 0xFFFFFFFF);
+    /* [FIX-2] 상수 대입 대신 실제 fsid 에 salt 를 XOR 한다.
+     * XOR 은 전단사(bijection)이므로 "서로 다른 파일시스템" 관계가 유지된다.
+     * 기존처럼 상수를 넣으면 /, /data, /storage 가 모두 같은 fsid 가 되어
+     * 물리적으로 불가능한 상태(= 즉시 위조 탐지)가 된다. */
+    int val0 = buf->f_fsid.__val[0] ^ (int)(g_fake_fsid & 0xFFFFFFFFUL);
+    int val1 = buf->f_fsid.__val[1] ^ (int)((g_fake_fsid >> 32) & 0xFFFFFFFFUL);
 
    if (copy_to_user_nofault_fn) {
         if (copy_to_user_nofault_fn(&buf->f_fsid.__val[0], &val0, sizeof(int)) != 0) return;
         if (copy_to_user_nofault_fn(&buf->f_fsid.__val[1], &val1, sizeof(int)) != 0) return;
     }
 }
+/* --- fstatfs 시스템 콜 후킹 콜백 (fd 기반 우회 차단) --- */
+static void after_fstatfs(hook_fargs2_t *a, void *u) {
+    if (!g_statfs_spoof_enabled) return;
+    if (current_uid() < 10000) return;
+    if (!is_tiktok_or_duck(current_comm())) return;
+    if ((long)a->ret != 0) return;
+
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
+    if (!regs) return;
+
+    /* fstatfs(fd, buf) */
+    struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[1];
+    if (!buf) return;
+
+    int val0 = buf->f_fsid.__val[0] ^ (int)(g_fake_fsid & 0xFFFFFFFFUL);
+    int val1 = buf->f_fsid.__val[1] ^ (int)((g_fake_fsid >> 32) & 0xFFFFFFFFUL);
+
+    if (copy_to_user_nofault_fn) {
+        copy_to_user_nofault_fn(&buf->f_fsid.__val[0], &val0, sizeof(int));
+        copy_to_user_nofault_fn(&buf->f_fsid.__val[1], &val1, sizeof(int));
+    }
+}
 /* --- newfstatat 시스템 콜 후킹 콜백 (Inode 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
-    if (!g_statfs_spoof_enabled) return; 
+    if (!g_statfs_spoof_enabled) return;
     if (current_uid() < 10000) return;
     if (!is_tiktok_or_duck(current_comm())) return;
     if ((long)a->ret != 0) return;
@@ -4460,8 +4486,7 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
 
     const char __user *filename = (const char __user *)regs->regs[1];
     char path[256];
-    
-    // (경로 읽기 - 기존과 동일)
+
     if (copy_from_kernel_nofault_fn) {
         if (copy_from_kernel_nofault_fn(path, filename, 255) != 0) return;
         path[255] = '\0';
@@ -4469,31 +4494,46 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
         if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     }
 
-    // 🟢 여기서부터 추가! (/dev/pts UID/GID 위조)
+    /* /dev/pts UID/GID 위조 (기존 동작 유지) */
     if (is_devpts_path(path)) {
         struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
         if (buf && copy_to_user_nofault_fn) {
-            unsigned int fake_uid = 10000; // 일반 앱 UID
-            unsigned int fake_gid = 10000; // 일반 앱 GID
+            unsigned int fake_uid = 10000;
+            unsigned int fake_gid = 10000;
             copy_to_user_nofault_fn(&buf->st_uid, &fake_uid, sizeof(unsigned int));
             copy_to_user_nofault_fn(&buf->st_gid, &fake_gid, sizeof(unsigned int));
         }
-        return; // 위조 후 종료
+        return;
     }
-    // 🟢 추가 끝!
 
-    // (기존 inode 위조 코드 - 아래에 그대로 둡니다)
-    bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
-                          (kpm_strstr(path, "ugc.tiktok.lite") != NULL) ||
-                          (kpm_strstr(path, "com.eltavine.duckdetector") != NULL);
-    if (!is_target_path) return;
-
+    /* [FIX-3] 경로 매칭 제거: 대상 앱의 모든 stat 에 일관 적용.
+     * 특정 경로만 변조하면 다른 경로와의 비교로 위조가 드러난다. */
     struct k_stat __user *buf = (struct k_stat __user *)regs->regs[2];
     if (!buf) return;
 
-    unsigned long fake_ino = g_fake_ino; 
+    /* [FIX-2] 실제 inode 에 salt XOR */
+    unsigned long new_ino = buf->st_ino ^ g_fake_ino;
     if (copy_to_user_nofault_fn) {
-        if (copy_to_user_nofault_fn(&buf->st_ino, &fake_ino, sizeof(unsigned long)) != 0) return;
+        if (copy_to_user_nofault_fn(&buf->st_ino, &new_ino, sizeof(unsigned long)) != 0) return;
+    }
+}
+/* --- fstat 시스템 콜 후킹 콜백 (fd 기반 우회 차단) --- */
+static void after_fstat_inode(hook_fargs1_t *a, void *u) {
+    if (!g_statfs_spoof_enabled) return;
+    if (current_uid() < 10000) return;
+    if (!is_tiktok_or_duck(current_comm())) return;
+    if ((long)a->ret != 0) return;
+
+    struct pt_regs *regs = (struct pt_regs *)a->arg0;
+    if (!regs) return;
+
+    /* fstat(fd, buf) */
+    struct k_stat __user *buf = (struct k_stat __user *)regs->regs[1];
+    if (!buf) return;
+
+    unsigned long new_ino = buf->st_ino ^ g_fake_ino;
+    if (copy_to_user_nofault_fn) {
+        copy_to_user_nofault_fn(&buf->st_ino, &new_ino, sizeof(unsigned long));
     }
 }
 /* --- statx 시스템 콜 후킹 콜백 (최신 안드로이드 대응) --- */
@@ -4508,8 +4548,7 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
 
     const char __user *filename = (const char __user *)regs->regs[1];
     char path[256];
-    
-    // (경로 읽기 - 기존과 동일)
+
     if (copy_from_kernel_nofault_fn) {
         if (copy_from_kernel_nofault_fn(path, filename, 255) != 0) return;
         path[255] = '\0';
@@ -4517,32 +4556,35 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
         if (compat_strncpy_from_user(path, filename, sizeof(path)) <= 0) return;
     }
 
-    // 🟢 여기서부터 추가! (/dev/pts UID/GID 위조)
+    /* /dev/pts UID/GID 위조 (기존 동작 유지) */
     if (is_devpts_path(path)) {
-        void __user *buf = (void __user *)regs->regs[4]; 
+        void __user *buf = (void __user *)regs->regs[4];
         if (buf && copy_to_user_nofault_fn) {
             unsigned int fake_uid = 10000;
             unsigned int fake_gid = 10000;
-            // 🎯 statx 실제 오프셋: stx_uid는 0x14, stx_gid는 0x18
             copy_to_user_nofault_fn((char*)buf + 0x14, &fake_uid, sizeof(unsigned int));
             copy_to_user_nofault_fn((char*)buf + 0x18, &fake_gid, sizeof(unsigned int));
         }
         return;
     }
-    // 🟢 추가 끝!
 
-    // (기존 inode 위조 코드 - 아래에 그대로 둡니다)
-    bool is_target_path = (kpm_strstr(path, "ugc.trill") != NULL) || 
-                          (kpm_strstr(path, "ugc.tiktok.lite") != NULL) ||
-                          (kpm_strstr(path, "com.eltavine.duckdetector") != NULL);
-    if (!is_target_path) return;
-
-    void __user *buf = (void __user *)regs->regs[4]; 
+    /* [FIX-3] 경로 매칭 제거 → 대상 앱의 모든 statx 에 일관 적용 */
+    void __user *buf = (void __user *)regs->regs[4];
     if (!buf) return;
 
-    unsigned long fake_ino = g_fake_ino;
+    unsigned long cur_ino = 0;
+    if (copy_from_kernel_nofault_fn) {
+        if (copy_from_kernel_nofault_fn(&cur_ino, (char __user *)buf + 0x20,
+                                        sizeof(cur_ino)) != 0)
+            return;
+    } else {
+        return;
+    }
+
+    /* [FIX-2] 실제 inode 에 salt XOR */
+    unsigned long new_ino = cur_ino ^ g_fake_ino;
     if (copy_to_user_nofault_fn) {
-        copy_to_user_nofault_fn((char*)buf + 0x20, &fake_ino, sizeof(unsigned long));
+        copy_to_user_nofault_fn((char*)buf + 0x20, &new_ino, sizeof(unsigned long));
     }
 }
 /* ===== [수정] seq_read 후킹 (maps 파일 내용 가로채기) ===== */
@@ -4941,6 +4983,26 @@ static long init(const char *args, const char *event, void *__user r)
         hook_wrap((void *)addr, 1, NULL, after_statfs, NULL); 
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_statfs\n");
+    }
+    /* --- fstatfs 등록 (fd 기반 우회 차단) --- */
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_fstatfs");
+    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_fstatfs");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook fstatfs @ %lx\n", addr);
+        hook_wrap((void *)addr, 2, NULL, after_fstatfs, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find __arm64_sys_fstatfs\n");
+    }
+    /* --- fstat 등록 (fd 기반 우회 차단) --- */
+    addr = (unsigned long)lookup_name_optional_suffix("__arm64_sys_fstat");
+    if (!addr) addr = (unsigned long)lookup_name_optional_suffix("__se_sys_fstat");
+    if (addr) {
+        g_funcs[g_hooks++] = (void *)addr;
+        pr_info("[selinux_hook] hook fstat @ %lx\n", addr);
+        hook_wrap((void *)addr, 1, NULL, after_fstat_inode, NULL);
+    } else {
+        pr_warn("[selinux_hook] cannot find __arm64_sys_fstat\n");
     }
     /* ---------------------------------- */
 
