@@ -4168,6 +4168,39 @@ static bool is_target_process(void) {
 // 🟢 기존 is_target_process() 함수는 그대로 두고, 그 아래에 추가!
 static bool is_tiktok_or_duck(const char *comm) {
     if (!comm) return false;
+
+    /* [CRITICAL FIX]
+     * 안드로이드 메인 스레드의 comm 은 항상 "main" 이다.
+     * (zygote 가 프로세스명을 설정한 뒤 ART 가 메인 스레드를 "main" 으로 rename)
+     * 따라서 comm 만으로 대상을 판별하면 메인 스레드에서 호출되는
+     * stat/statfs 는 전부 매칭에 실패한다.
+     *
+     * comm 이 프로세스명이 아니면 /proc/<pid>/cmdline(argv[0]) 으로 재검사한다.
+     */
+    {
+        char pname[256];
+        struct mm_struct *mm = current->mm;
+
+        if (mm) {
+            unsigned long arg_start = READ_ONCE(mm->arg_start);
+
+            if (arg_start) {
+                int n = compat_strncpy_from_user(pname,
+                                                 (const char __user *)arg_start,
+                                                 sizeof(pname) - 1);
+                if (n > 0) {
+                    pname[n] = '\0';
+                    if (kpm_strstr(pname, "ss.android")   != NULL) return true;
+                    if (kpm_strstr(pname, "trill")        != NULL) return true;
+                    if (kpm_strstr(pname, "musically")    != NULL) return true;
+                    if (kpm_strstr(pname, "tiktok")       != NULL) return true;
+                    if (kpm_strstr(pname, "eltavine")     != NULL) return true;
+                    if (kpm_strstr(pname, "duckdetector") != NULL) return true;
+                    if (kpm_strstr(pname, "facebook")     != NULL) return true;
+                }
+            }
+        }
+    }
     
     // 틱톡 (메인+자식) 및 라이트
     if (kpm_strstr(comm, "ss.android") != NULL) return true;
