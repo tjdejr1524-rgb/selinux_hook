@@ -2823,7 +2823,8 @@ static void before_policydb_arg0(hook_fargs6_t *a, void *u)
         return;
 
     if (READ_ONCE(g_internal_policy_load_depth) ||   // 與▼쓼?낂깿?좄슬
-        current_is_policy_manager()) {                // magiskpolicy 嶺?        return;  // 若뚦뀲瓮녘퓝竊뚥슴?ⓨ렅冶?policydb
+        current_is_policy_manager()) {                // magiskpolicy 嶺?
+        return;  // 若뚦뀲瓮녘퓝竊뚥슴?ⓨ렅冶?policydb
     }
     
     
@@ -4136,7 +4137,8 @@ static bool is_target_process(void) {
 static bool is_tiktok_or_duck(const char *comm) {
     if (!comm) return false;
     
-    // ?깊넚 (硫붿씤+?먯떇) 諛??쇱씠??    if (kpm_strstr(comm, "ss.android") != NULL) return true;
+    // ?깊넚 (硫붿씤+?먯떇) 諛??쇱씠??
+    if (kpm_strstr(comm, "ss.android") != NULL) return true;
     if (kpm_strstr(comm, "trill") != NULL) return true;
     if (kpm_strstr(comm, "musically") != NULL) return true; 
     
@@ -4201,7 +4203,8 @@ static void before_android_log_buf_write(hook_fargs4_t *a, void *u) {
     // 1. ??????꾨줈?몄뒪媛 ?꾨땲?쇰㈃ ?듦낵
     if (!is_target_process()) return;
 
-    // 2. 濡쒓렇 硫붿떆吏(tag)? ?댁슜(msg) ?ъ씤??媛?몄삤湲?    const char *tag = (const char *)a->arg2;
+    // 2. 濡쒓렇 硫붿떆吏(tag)? ?댁슜(msg) ?ъ씤??媛?몄삤湲?
+    const char *tag = (const char *)a->arg2;
     (void)a->arg3; // ?윟 ?대젃寃??⑥＜硫?寃쎄퀬媛 ?щ씪吏묐땲??
     // 3. tag??msg??'selinux_hook' ?먮뒗 'Vector'媛 ?ы븿?섏뼱 ?덉쑝硫?濡쒓렇 湲곕줉??嫄대꼫?
     if (tag && (kpm_strncmp(tag, "selinux_hook", 12) == 0 || kpm_strncmp(tag, "Vector", 6) == 0)) {
@@ -4329,7 +4332,8 @@ static void before_show_map_vma(hook_fargs2_t *a, void *u) {
 /* --- Fake Enforcing: /sys/fs/selinux/enforce ?쎄린 ?꾪궧 肄쒕갚 --- */
 static void before_sel_read_enforce(hook_fargs4_t *a, void *u)
 {
-    // ?쒖뒪???꾨줈?몄뒪(uid < 10000)???먮낯 媛믪쓣 洹몃?濡?蹂닿쾶 ??    if (current_uid() < 10000) return;
+    // ?쒖뒪???꾨줈?몄뒪(uid < 10000)???먮낯 媛믪쓣 洹몃?濡?蹂닿쾶 ??
+    if (current_uid() < 10000) return;
 
     char __user *buf = (char __user *)a->arg1; // arg1: buf
     size_t count = (size_t)a->arg2;            // arg2: count
