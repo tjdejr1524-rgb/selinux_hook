@@ -4423,6 +4423,16 @@ static void after_show_map_vma(hook_fargs2_t *a, void *u) {
 }
 /* --- show_map_vma 필터링을 위한 추가 코드 끝 --- */
 
+/* --- 유저 메모리 안전 읽기 (커널에서 유저 포인터 직접 역참조 금지) --- */
+static inline int kpm_read_user(void *dst, const void __user *src, size_t n)
+{
+    long r;
+    if (!dst || !src || !n)
+        return -EINVAL;
+    r = compat_strncpy_from_user((char *)dst, (const char __user *)src, (long)n);
+    return (r == (long)n) ? 0 : -EFAULT;
+}
+
 /* --- statfs 시스템 콜 후킹 콜백 (UUID 위조 - 틱톡/덕디텍터 전용) --- */
 static void after_statfs(hook_fargs3_t *a, void *u) {
     if (!g_statfs_spoof_enabled) return;
@@ -4444,8 +4454,10 @@ static void after_statfs(hook_fargs3_t *a, void *u) {
      * XOR 은 전단사(bijection)이므로 "서로 다른 파일시스템" 관계가 유지된다.
      * 기존처럼 상수를 넣으면 /, /data, /storage 가 모두 같은 fsid 가 되어
      * 물리적으로 불가능한 상태(= 즉시 위조 탐지)가 된다. */
-    int val0 = buf->f_fsid.__val[0] ^ (int)(g_fake_fsid & 0xFFFFFFFFUL);
-    int val1 = buf->f_fsid.__val[1] ^ (int)((g_fake_fsid >> 32) & 0xFFFFFFFFUL);
+    int sv[2] = {0, 0};
+    if (kpm_read_user(sv, &buf->f_fsid.__val[0], sizeof(sv)) != 0) return;
+    int val0 = sv[0] ^ (int)(g_fake_fsid & 0xFFFFFFFFUL);
+    int val1 = sv[1] ^ (int)((g_fake_fsid >> 32) & 0xFFFFFFFFUL);
 
    if (copy_to_user_nofault_fn) {
         if (copy_to_user_nofault_fn(&buf->f_fsid.__val[0], &val0, sizeof(int)) != 0) return;
@@ -4466,8 +4478,10 @@ static void after_fstatfs(hook_fargs2_t *a, void *u) {
     struct k_statfs __user *buf = (struct k_statfs __user *)regs->regs[1];
     if (!buf) return;
 
-    int val0 = buf->f_fsid.__val[0] ^ (int)(g_fake_fsid & 0xFFFFFFFFUL);
-    int val1 = buf->f_fsid.__val[1] ^ (int)((g_fake_fsid >> 32) & 0xFFFFFFFFUL);
+    int sv[2] = {0, 0};
+    if (kpm_read_user(sv, &buf->f_fsid.__val[0], sizeof(sv)) != 0) return;
+    int val0 = sv[0] ^ (int)(g_fake_fsid & 0xFFFFFFFFUL);
+    int val1 = sv[1] ^ (int)((g_fake_fsid >> 32) & 0xFFFFFFFFUL);
 
     if (copy_to_user_nofault_fn) {
         copy_to_user_nofault_fn(&buf->f_fsid.__val[0], &val0, sizeof(int));
@@ -4512,7 +4526,9 @@ static void after_newfstatat_inode(hook_fargs4_t *a, void *u) {
     if (!buf) return;
 
     /* [FIX-2] 실제 inode 에 salt XOR */
-    unsigned long new_ino = buf->st_ino ^ g_fake_ino;
+    unsigned long real_ino = 0;
+    if (kpm_read_user(&real_ino, &buf->st_ino, sizeof(real_ino)) != 0) return;
+    unsigned long new_ino = real_ino ^ g_fake_ino;
     if (copy_to_user_nofault_fn) {
         if (copy_to_user_nofault_fn(&buf->st_ino, &new_ino, sizeof(unsigned long)) != 0) return;
     }
@@ -4531,7 +4547,9 @@ static void after_fstat_inode(hook_fargs1_t *a, void *u) {
     struct k_stat __user *buf = (struct k_stat __user *)regs->regs[1];
     if (!buf) return;
 
-    unsigned long new_ino = buf->st_ino ^ g_fake_ino;
+    unsigned long real_ino = 0;
+    if (kpm_read_user(&real_ino, &buf->st_ino, sizeof(real_ino)) != 0) return;
+    unsigned long new_ino = real_ino ^ g_fake_ino;
     if (copy_to_user_nofault_fn) {
         copy_to_user_nofault_fn(&buf->st_ino, &new_ino, sizeof(unsigned long));
     }
@@ -4573,13 +4591,8 @@ static void after_statx_inode(hook_fargs5_t *a, void *u) {
     if (!buf) return;
 
     unsigned long cur_ino = 0;
-    if (copy_from_kernel_nofault_fn) {
-        if (copy_from_kernel_nofault_fn(&cur_ino, (char __user *)buf + 0x20,
-                                        sizeof(cur_ino)) != 0)
-            return;
-    } else {
+    if (kpm_read_user(&cur_ino, (char __user *)buf + 0x20, sizeof(cur_ino)) != 0)
         return;
-    }
 
     /* [FIX-2] 실제 inode 에 salt XOR */
     unsigned long new_ino = cur_ino ^ g_fake_ino;
@@ -4990,7 +5003,7 @@ static long init(const char *args, const char *event, void *__user r)
     if (addr) {
         g_funcs[g_hooks++] = (void *)addr;
         pr_info("[selinux_hook] hook fstatfs @ %lx\n", addr);
-        hook_wrap((void *)addr, 2, NULL, after_fstatfs, NULL);
+        hook_wrap((void *)addr, 1, NULL, after_fstatfs, NULL);
     } else {
         pr_warn("[selinux_hook] cannot find __arm64_sys_fstatfs\n");
     }
